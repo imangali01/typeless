@@ -33,4 +33,4 @@ $iscc = @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", "${env:ProgramFile
 if (-not $iscc) { throw "Inno Setup not found: winget install JRSoftware.InnoSetup" }
 & $iscc "/DAppVersion=$version" packaging\typeless.iss
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
-Write-Host "Done: dist\TypelessSetup.exe"
+Write-Host "Done: dist\TypelessSetup-$version.exe"
