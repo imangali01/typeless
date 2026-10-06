@@ -32,6 +32,7 @@ class GlobalHotkey(QObject):
     # Connect receivers with Qt.QueuedConnection: anything slow running inside the hook
     # callback makes Windows drop the hook.
     triggered = Signal()
+    enter_pressed = Signal()  # only while matcher.intercept_enter is on
     captured = Signal(object)  # Hotkey
 
     def __init__(self, hotkey: Hotkey, parent: QObject | None = None) -> None:
@@ -87,7 +88,10 @@ class GlobalHotkey(QObject):
                     if decision.inject_mask:
                         _send_mask()
                     if decision.triggered:
+                        log.debug("hotkey vk=%#x flags=%#x t=%d", kb.vkCode, kb.flags, kb.time)
                         self.triggered.emit()  # queued to receivers by Qt
+                    if decision.enter:
+                        self.enter_pressed.emit()
                     if decision.captured is not None:
                         self.captured.emit(decision.captured)
                     if decision.suppress:

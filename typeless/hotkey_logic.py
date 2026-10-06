@@ -18,15 +18,18 @@ class Decision:
     triggered: bool = False
     captured: Hotkey | None = None
     inject_mask: bool = False
+    enter: bool = False  # plain Enter pressed while dictating
 
 
 PASS = Decision()
+VK_RETURN = 0x0D
 
 
 class HotkeyMatcher:
     def __init__(self, hotkey: Hotkey) -> None:
         self.hotkey = hotkey
         self.capturing = False
+        self.intercept_enter = False  # on while dictating: Enter finishes and sends
         self._down: set[int] = set()  # physically held modifier VKs
         self._swallowed: set[int] = set()  # non-modifier VKs whose key-up we must eat too
 
@@ -61,5 +64,9 @@ class HotkeyMatcher:
         if vk == self.hotkey.vk and mods == self.hotkey.modifiers:
             self._swallowed.add(vk)
             return Decision(suppress=True, triggered=True, inject_mask=mask)
+
+        if vk == VK_RETURN and self.intercept_enter and not mods:
+            self._swallowed.add(vk)
+            return Decision(suppress=True, enter=True)
 
         return PASS

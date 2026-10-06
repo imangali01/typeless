@@ -51,6 +51,7 @@ class TrayApp:
         self.controller = Controller(self.config)
         # Queued: the hook callback must return at once, or Windows silently drops the hook.
         self.hotkey.triggered.connect(self.controller.toggle, Qt.ConnectionType.QueuedConnection)
+        self.hotkey.enter_pressed.connect(self.controller.submit, Qt.ConnectionType.QueuedConnection)
 
         self.icons = {False: make_icon(False), True: make_icon(True)}
         self.tray = QSystemTrayIcon(self.icons[False])
@@ -80,6 +81,7 @@ class TrayApp:
 
     def _on_state(self, state: State) -> None:
         recording = state is not State.IDLE
+        self.hotkey.matcher.intercept_enter = state is State.RECORDING
         self.tray.setIcon(self.icons[recording])
         verb = "Остановить" if recording else "Начать"
         self.toggle_action.setText(f"{verb} диктовку ({self.config.hotkey})")

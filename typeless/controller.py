@@ -18,6 +18,8 @@ from .overlay import Overlay
 
 log = logging.getLogger(__name__)
 
+VK_RETURN = 0x0D
+
 
 class State(Enum):
     IDLE = "idle"
@@ -38,6 +40,7 @@ class Controller(QObject):
         self._live = LiveText()
         self._target = None
         self._missed = ""  # text we could not type because focus moved
+        self._send_enter = False
         self._set_engine(create_engine(config))
 
     # --- engine wiring --------------------------------------------------------
@@ -75,10 +78,21 @@ class Controller(QObject):
         elif self.state is State.RECORDING:
             self.stop()
 
+    @Slot()
+    def submit(self) -> None:
+        """Enter while dictating: hide the overlay, finish typing, then press Enter."""
+        if self.state is not State.RECORDING:
+            return
+        log.info("submit")
+        self._send_enter = True
+        self.overlay.dismiss()
+        self.stop()
+
     def start(self) -> None:
         self._target = w.user32.GetForegroundWindow()
         self._live = LiveText()
         self._missed = ""
+        self._send_enter = False
         self._set_state(State.RECORDING)
         if self.config.show_overlay and not self.engine.types_natively:
             self.overlay.present()
@@ -121,8 +135,12 @@ class Controller(QObject):
             QGuiApplication.clipboard().setText(self._missed.strip())
             self.notify.emit("Текст в буфере обмена",
                              "Окно сменилось во время диктовки — вставьте текст через Ctrl+V.")
-        self._refresh_overlay()
-        self.overlay.finish()
+        if self._send_enter:
+            if not self._missed:
+                typer.press_combo([VK_RETURN])  # queued after the remaining text
+        else:
+            self._refresh_overlay()
+            self.overlay.finish()
         self._set_state(State.IDLE)
         log.info("dictation finished: %r", self._live.committed)
 

@@ -1,4 +1,4 @@
-from typeless.hotkey_logic import HotkeyMatcher
+from typeless.hotkey_logic import Decision, HotkeyMatcher
 from typeless.keys import DEFAULT_HOTKEY, Hotkey
 
 LWIN, LCTRL, LALT, C, H = 0x5B, 0xA2, 0xA4, ord("C"), ord("H")
@@ -40,6 +40,29 @@ def test_capture_reports_combo_and_swallows_it():
     assert d.inject_mask
     assert not m.capturing
     assert m.on_event(ord("D"), False).suppress
+
+
+ENTER, LSHIFT = 0x0D, 0xA0
+
+
+def test_enter_passes_when_not_dictating():
+    m = HotkeyMatcher(DEFAULT_HOTKEY)
+    assert m.on_event(ENTER, True) == Decision()
+
+
+def test_enter_is_swallowed_while_dictating():
+    m = HotkeyMatcher(DEFAULT_HOTKEY)
+    m.intercept_enter = True
+    d = m.on_event(ENTER, True)
+    assert d.suppress and d.enter and not d.triggered
+    assert m.on_event(ENTER, False).suppress
+
+
+def test_shift_enter_still_passes_while_dictating():
+    m = HotkeyMatcher(DEFAULT_HOTKEY)
+    m.intercept_enter = True
+    m.on_event(LSHIFT, True)
+    assert not m.on_event(ENTER, True).suppress
 
 
 def test_hotkey_without_modifiers():
