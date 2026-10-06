@@ -107,7 +107,7 @@ class Controller(QObject):
             if shortcut is not None:
                 # e.g. VS Code: let the app's own dictation handle it
                 log.info("%s: sending %s instead of dictating", process, shortcut)
-                typer.press_combo(app_rules.combo_vks(shortcut))
+                typer.press_shortcut(app_rules.combo_vks(shortcut), w.user32.GetForegroundWindow())
                 return
             self.start()
         elif self.state is State.RECORDING:

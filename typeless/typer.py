@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import logging
 import queue
 import threading
 import time
@@ -88,16 +89,20 @@ class _Worker:
     """
 
     def __init__(self) -> None:
-        self._queue: queue.Queue[list[KeyEvent]] = queue.Queue()
+        self._queue: queue.Queue = queue.Queue()  # event lists, or callables doing their own sending
         threading.Thread(target=self._run, name="typer", daemon=True).start()
 
     def _run(self) -> None:
         while True:
-            send_events(self._queue.get())
+            job = self._queue.get()
+            try:
+                job() if callable(job) else send_events(job)
+            except Exception:
+                logging.getLogger(__name__).exception("sending input failed")
 
-    def put(self, events: list[KeyEvent]) -> None:
-        if events:
-            self._queue.put(events)
+    def put(self, job) -> None:
+        if job:
+            self._queue.put(job)
 
 
 _worker: _Worker | None = None
@@ -116,3 +121,15 @@ def apply(edit: Edit) -> None:
 
 def press_combo(vks: list[int]) -> None:
     _get_worker().put(combo_events(vks))
+
+
+def press_shortcut(vks: list[int], hwnd) -> None:
+    """Press an app's shortcut so it works in any keyboard layout (see layout.py)."""
+    from .layout import english_layout
+
+    def job() -> None:
+        _wait_modifiers_released()  # the hotkey's Win key may still be down
+        with english_layout(hwnd):
+            send_events(combo_events(vks))
+
+    _get_worker().put(job)
