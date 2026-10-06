@@ -163,7 +163,7 @@ class Controller(QObject):
         if self._send_enter and self._can_type and not self._missed:
             typer.press_combo([VK_RETURN])  # queued after the remaining text
         self._set_state(State.IDLE)
-        log.info("dictation finished: %r", text)
+        log.info("dictation finished: %d chars", len(text))  # never log what was said
         if text:
             self.last_text = text
             self.dictated.emit(text)
