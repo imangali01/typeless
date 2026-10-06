@@ -9,7 +9,9 @@ from __future__ import annotations
 import struct
 
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QRadialGradient
+from PySide6.QtGui import (
+    QColor, QIcon, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QRadialGradient,
+)
 
 IDLE_BARS = ("#00e5ff", "#7c5cff", "#ff4fd8")
 RECORDING_BARS = ("#ffb199", "#f2384f", "#b3122f")
@@ -134,22 +136,41 @@ def icon(recording: bool = False) -> QIcon:
     return result
 
 
+def _dib(size: int) -> bytes:
+    """Classic 32-bit BGRA icon frame (BITMAPINFOHEADER + pixels + AND mask).
+
+    Small sizes must be DIBs: Inno Setup and some Explorer views ignore PNG frames
+    below 256 px and fall back to a generic icon.
+    """
+    img = pixmap(size).toImage().convertToFormat(QImage.Format.Format_ARGB32)
+    rows = []
+    for y in range(size - 1, -1, -1):  # bottom-up
+        rows.append(bytes(img.constBits())[y * img.bytesPerLine(): y * img.bytesPerLine() + size * 4])
+    mask_row = ((size + 31) // 32) * 4
+    header = struct.pack("<IiiHHIIiiII", 40, size, size * 2, 1, 32, 0, size * size * 4 + mask_row * size,
+                         0, 0, 0, 0)
+    return header + b"".join(rows) + b"\x00" * (mask_row * size)
+
+
 def write_ico(path: str) -> None:
-    """Multi-size .ico with PNG frames (supported since Windows Vista)."""
+    """Multi-size .ico: DIB frames for small sizes, PNG for 256 px."""
     frames = []
     for size in ICO_SIZES:
-        data = QByteArray()
-        buf = QBuffer(data)
-        buf.open(QIODevice.OpenModeFlag.WriteOnly)
-        pixmap(size).save(buf, "PNG")
-        frames.append((size, bytes(data)))
+        if size >= 256:
+            data = QByteArray()
+            buf = QBuffer(data)
+            buf.open(QIODevice.OpenModeFlag.WriteOnly)
+            pixmap(size).save(buf, "PNG")
+            frames.append((size, bytes(data)))
+        else:
+            frames.append((size, _dib(size)))
     header = struct.pack("<HHH", 0, 1, len(frames))
     offset = 6 + 16 * len(frames)
     entries, blobs = b"", b""
-    for size, png in frames:
+    for size, blob in frames:
         dim = 0 if size >= 256 else size  # 0 means 256 in the ICO format
-        entries += struct.pack("<BBBBHHII", dim, dim, 0, 0, 1, 32, len(png), offset)
-        blobs += png
-        offset += len(png)
+        entries += struct.pack("<BBBBHHII", dim, dim, 0, 0, 1, 32, len(blob), offset)
+        blobs += blob
+        offset += len(blob)
     with open(path, "wb") as f:
         f.write(header + entries + blobs)
