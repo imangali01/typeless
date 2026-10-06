@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from enum import Enum
 
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
@@ -22,6 +23,10 @@ from .terms import suggest_terms
 log = logging.getLogger(__name__)
 
 VK_RETURN = 0x0D
+
+
+def _import_audio() -> None:
+    import sounddevice  # noqa: F401  (~0.4 s import)
 
 
 class State(Enum):
@@ -129,10 +134,15 @@ class Controller(QObject):
     def _begin(self) -> None:
         if self.state is not State.RECORDING:
             return
+        self.engine.start()  # microphone first: every millisecond before it is lost speech
         editable = focus_is_editable()
         self._can_type = editable is not False
         log.info("focus editable: %s", editable)
-        self.engine.start()
+
+    def warm_up(self) -> None:
+        """Pay one-time costs at app start instead of on the first hotkey press."""
+        focus_is_editable()  # UI Automation client: ~0.3 s the first time
+        threading.Thread(target=_import_audio, name="warm-audio", daemon=True).start()
 
     def stop(self) -> None:
         self._set_state(State.FINISHING)

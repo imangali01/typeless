@@ -10,7 +10,7 @@ import logging
 import os
 import sys
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
@@ -76,6 +76,7 @@ class TrayApp:
     def run(self, background: bool) -> None:
         self.hotkey.install()
         self.tray.show()
+        QTimer.singleShot(0, self.controller.warm_up)
         if background:
             self._notify("Typeless работает", f"Нажмите {self.config.hotkey}, чтобы начать диктовку.")
         else:
