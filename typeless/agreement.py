@@ -64,6 +64,27 @@ class LocalAgreement:
         return rest
 
 
+_SENTENCE_END = (".", "!", "?", "…", ",", ";", ":")  # clause ends are safe cut points too
+
+
+def trim_point(committed: list[Word], offset: float, buffer_s: float, soft: float, hard: float) -> float | None:
+    """Absolute time to cut the audio buffer at, or None to keep it.
+
+    Past `soft` seconds we cut after the last confirmed sentence, so the model never
+    restarts mid-sentence (which makes it invent full stops); past `hard` we cut at
+    the last confirmed word anyway to keep passes fast.
+    """
+    if buffer_s <= soft:
+        return None
+    inside = [w for w in committed if w.end > offset]
+    for w in reversed(inside):
+        if w.text.strip().endswith(_SENTENCE_END):
+            return w.end
+    if buffer_s > hard and inside:
+        return inside[-1].end
+    return None
+
+
 def join_words(words: list[Word]) -> str:
     # Whisper words carry their own leading space (" слово"); normalise to single spaces.
     return " ".join(w.text.strip() for w in words if w.text.strip())

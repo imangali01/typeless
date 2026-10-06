@@ -13,7 +13,7 @@ import time
 
 import numpy as np
 
-from ..agreement import LocalAgreement, Word, join_words
+from ..agreement import LocalAgreement, Word, join_words, trim_point
 from ..config import Config
 from ..languages import DEFAULT_LANGUAGE, LANGUAGE_MODES, build_prompt
 from .base import Engine
@@ -21,9 +21,14 @@ from .base import Engine
 log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16_000
-STEP_S = 0.6  # minimum time between transcription passes
-MAX_BUFFER_S = 12.0  # trim confirmed audio once the buffer grows beyond this
+STEP_S = 0.5  # minimum time between transcription passes
+SOFT_BUFFER_S = 6.0  # beyond this, trim at the last confirmed sentence/clause end
+HARD_BUFFER_S = 10.0  # beyond this, trim at the last confirmed word even mid-sentence
 MIN_AUDIO_S = 0.5
+FINAL_BEAM = 5  # wider beam for the last pass, only when the tail is short
+FINAL_BEAM_MAX_S = 3.0
+CPU_THREADS = 4  # measured on i5-13420H: ~as fast as 8 threads at half the CPU load
+SPEECH_RMS = 0.006  # below this a chunk is treated as silence
 
 
 class WhisperEngine(Engine):
@@ -49,8 +54,11 @@ class WhisperEngine(Engine):
                 self.status.emit("Загрузка модели…")
                 t = time.monotonic()
                 self._model = WhisperModel(
-                    self.config.whisper_model, device="cpu", compute_type="int8", cpu_threads=8
+                    self.config.whisper_model, device="cpu", compute_type="int8", cpu_threads=CPU_THREADS
                 )
+                # The first pass is ~2x slower (allocations, caches): pay it now, not on the first phrase.
+                warm = np.random.default_rng(0).normal(0, 0.01, SAMPLE_RATE).astype(np.float32)
+                list(self._model.transcribe(warm, language="ru", beam_size=1)[0])
                 log.info("model %s loaded in %.1fs", self.config.whisper_model, time.monotonic() - t)
                 self.status.emit("")
             return self._model
@@ -120,13 +128,13 @@ class WhisperEngine(Engine):
         return build_prompt(self.config.language_mode, self.config.profile,
                             self.config.dictionary, join_words(before))
 
-    def _transcribe(self, audio: np.ndarray, offset: float, prompt: str) -> list[Word]:
+    def _transcribe(self, audio: np.ndarray, offset: float, prompt: str, beam: int = 1) -> list[Word]:
         model = self._ensure_model()
         mode = LANGUAGE_MODES.get(self.config.language_mode, LANGUAGE_MODES[DEFAULT_LANGUAGE])
         segments, _ = model.transcribe(
             audio,
             language=mode.whisper,
-            beam_size=1,
+            beam_size=beam,
             word_timestamps=True,
             vad_filter=True,
             condition_on_previous_text=False,
@@ -143,31 +151,45 @@ class WhisperEngine(Engine):
         if text:
             self.final.emit(text)
 
+    @staticmethod
+    def _has_speech(audio: np.ndarray) -> bool:
+        return len(audio) > 0 and float(np.sqrt(np.mean(audio * audio))) >= SPEECH_RMS
+
     def _run(self) -> None:
         agreement = LocalAgreement()
         buffer = np.zeros(0, dtype=np.float32)
         offset = 0.0  # absolute time of buffer[0]
+        pending_tail = False  # last pass left unconfirmed words: keep going even in silence
         try:
             while not self._stop.is_set():
                 started = time.monotonic()
+                seen = len(buffer)
                 buffer = self._drain(buffer)
-                if len(buffer) >= MIN_AUDIO_S * SAMPLE_RATE:
+                # Pauses cost nothing: skip the pass if only silence arrived and nothing is pending.
+                fresh_speech = self._has_speech(buffer[seen:])
+                if len(buffer) >= MIN_AUDIO_S * SAMPLE_RATE and (fresh_speech or pending_tail):
                     words = self._transcribe(buffer, offset, self._prompt(agreement, offset))
                     confirmed, tail = agreement.update(words)
+                    pending_tail = bool(tail)
                     self._emit(confirmed)
                     self.preview.emit(join_words(tail))
-                    # Drop audio that is fully confirmed so passes stay fast.
-                    if len(buffer) / SAMPLE_RATE > MAX_BUFFER_S and agreement.committed:
-                        cut = int((agreement.committed_end - offset) * SAMPLE_RATE)
+                    # Drop confirmed audio so passes stay fast.
+                    cut_at = trim_point(agreement.committed, offset, len(buffer) / SAMPLE_RATE,
+                                        SOFT_BUFFER_S, HARD_BUFFER_S)
+                    if cut_at is not None:
+                        cut = int((cut_at - offset) * SAMPLE_RATE)
                         if cut > 0:
                             buffer = buffer[cut:]
-                            offset = agreement.committed_end
+                            offset = cut_at
                 self._stop.wait(max(0.0, STEP_S - (time.monotonic() - started)))
 
             self._close_stream()
             buffer = self._drain(buffer)
-            if len(buffer) >= 0.2 * SAMPLE_RATE:
-                words = self._transcribe(buffer, offset, self._prompt(agreement, offset))
+            # Last pass only if there is unconfirmed speech: on a silent tail Whisper invents text.
+            tail_audio = buffer[max(0, int((agreement.committed_end - offset) * SAMPLE_RATE)):]
+            if len(buffer) >= 0.2 * SAMPLE_RATE and self._has_speech(tail_audio):
+                beam = FINAL_BEAM if len(buffer) / SAMPLE_RATE <= FINAL_BEAM_MAX_S else 1
+                words = self._transcribe(buffer, offset, self._prompt(agreement, offset), beam=beam)
                 self._emit(agreement.flush(words))
             self.preview.emit("")
         except Exception as e:
