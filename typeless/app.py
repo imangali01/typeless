@@ -16,6 +16,7 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from . import autostart
+from . import winapi as w
 from .config import Config, app_dir
 from .controller import Controller, State
 from .hotkey import GlobalHotkey
@@ -202,6 +203,8 @@ def main() -> int:
     if _signal_running_instance("background" if background else "settings"):
         log.info("already running, asked it to %s", "stay" if background else "open settings")
         return 0
+    # Lets the installer/uninstaller detect and close a running Typeless (AppMutex in typeless.iss).
+    app.setProperty("mutex", w.kernel32.CreateMutexW(None, False, "TypelessAppMutex"))
     tray = TrayApp(app)
     tray.run(background)
     return app.exec()
