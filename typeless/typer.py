@@ -59,9 +59,25 @@ def send_events(events: list[KeyEvent]) -> None:
     w.user32.SendInput(len(events), arr, ctypes.sizeof(w.INPUT))
 
 
-def combo_events(vks: list[int]) -> list[KeyEvent]:
-    """Press keys in order and release in reverse, e.g. [VK_LWIN, ord('H')]."""
-    return [(vk, 0, 0) for vk in vks] + [(vk, 0, w.KEYEVENTF_KEYUP) for vk in reversed(vks)]
+MAPVK_VK_TO_VSC = 0
+w.user32.MapVirtualKeyW.argtypes = [ctypes.c_uint, ctypes.c_uint]
+w.user32.MapVirtualKeyW.restype = ctypes.c_uint
+
+
+def scan_code(vk: int) -> int:
+    return int(w.user32.MapVirtualKeyW(vk, MAPVK_VK_TO_VSC))
+
+
+def combo_events(vks: list[int], scan=scan_code) -> list[KeyEvent]:
+    """Press keys in order and release in reverse, e.g. [VK_LCONTROL, ord('D')].
+
+    Each event carries the key's hardware scan code, like a real keyboard. Chromium
+    apps (VS Code, browsers) match shortcuts by physical key: without a scan code
+    Ctrl+D only worked in the English layout, not in the Russian one.
+    """
+    down = [(vk, scan(vk), 0) for vk in vks]
+    up = [(vk, scan(vk), w.KEYEVENTF_KEYUP) for vk in reversed(vks)]
+    return down + up
 
 
 class _Worker:

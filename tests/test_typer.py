@@ -19,5 +19,14 @@ def test_surrogate_pair_is_two_code_units():
     assert [scan for _, scan, flags in events if not flags & UP] == [0xD83D, 0xDE00]
 
 
+def test_combo_carries_scan_codes_so_shortcuts_work_in_any_layout():
+    from typeless.typer import combo_events, scan_code
+
+    events = combo_events([0xA2, ord("D")])  # left Ctrl + D
+    assert [e[0] for e in events] == [0xA2, ord("D"), ord("D"), 0xA2]
+    assert all(scan for _, scan, _ in events)  # real scan codes, never 0
+    assert scan_code(ord("D")) == 0x20  # physical D key on a PC keyboard
+
+
 def test_empty_edit_has_no_events():
     assert build_events(Edit()) == []
