@@ -1,0 +1,9 @@
+[project]
+name = "typeless"
+version = "0.1.0"
+description = "Dictation into any text field by a global hotkey (Windows)"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
