@@ -23,3 +23,7 @@ def test_saved_config_round_trips(tmp_path):
     path = tmp_path / "config.json"
     Config(engine=ENGINE_WHISPER).save(path)
     assert Config.load(path).engine == ENGINE_WHISPER
+
+
+def test_auto_stop_defaults_on_for_old_configs(tmp_path):
+    assert load(tmp_path, {"engine": "parakeet", "version": 2}).auto_stop_s == 2.0

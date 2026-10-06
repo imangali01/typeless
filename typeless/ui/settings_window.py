@@ -47,6 +47,13 @@ MODELS = [
     ("base", "base — быстрее"),
     ("small", "small — точнее, медленно"),
 ]
+AUTO_STOP = [
+    (0.0, "Нет, по клавише"),
+    (1.0, "Через 1 с тишины"),
+    (2.0, "Через 2 с тишины"),
+    (3.0, "Через 3 с тишины"),
+    (5.0, "Через 5 с тишины"),
+]
 CLIPBOARD_MODES = [
     (CLIPBOARD_FALLBACK, "Если некуда печатать"),
     (CLIPBOARD_ALWAYS, "Всегда"),
@@ -190,10 +197,12 @@ class SettingsWindow(QWidget):
         reset.clicked.connect(lambda: self._apply_hotkey(DEFAULT_HOTKEY))
         group.row("Горячая клавиша", "", self.keycaps, self.change_btn, reset)
         group.row("Печатать во время речи", "", self._toggle(self.config.live_typing, "live_typing"))
+        group.row("Автоостановка", "", self._combo(AUTO_STOP, self.config.auto_stop_s, "auto_stop_s"))
         group.row("Копировать в буфер", "", self._combo(CLIPBOARD_MODES, self.config.clipboard, "clipboard"))
         group.row("Запускать с Windows", "", self._toggle(self.config.autostart, "autostart"))
         col.addWidget(group)
-        col.addWidget(label("Enter во время диктовки допечатывает текст и отправляет.", "footnote", wrap=True))
+        col.addWidget(label("Enter во время диктовки допечатывает текст и отправляет. Диктовка завершается сама, "
+                            "когда вы замолчали, — или по горячей клавише.", "footnote", wrap=True))
 
         self._rules_holder = QVBoxLayout()
         self._rules_holder.setSpacing(6)

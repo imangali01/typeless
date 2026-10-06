@@ -32,6 +32,14 @@ SOFT_BUFFER_S = 3.0  # beyond this, trim at the last confirmed sentence/clause e
 HARD_BUFFER_S = 6.0  # beyond this, trim at the last confirmed word even mid-sentence
 CONTEXT_S = 1.0  # confirmed audio kept before a trim: the model hears the words before the cut
 SLOW_PASS_S = 2.0  # log passes slower than this
+NO_SPEECH_S = 8.0  # with auto-stop on, give up if nothing is said at all (hotkey pressed by accident)
+
+
+def should_auto_stop(limit: float, heard: bool, quiet: float) -> bool:
+    """limit = Config.auto_stop_s (0 = off); quiet = seconds since the last speech (or the start)."""
+    if limit <= 0:
+        return False
+    return quiet >= (limit if heard else max(limit, NO_SPEECH_S))
 
 
 class StreamingEngine(Engine):
@@ -182,6 +190,8 @@ class StreamingEngine(Engine):
             in_phrase = False  # speech heard since the last phrase ended
             last_voice = 0.0  # absolute time the last speech frame ended
             phrase_start = True  # next confirmed words open a phrase
+            heard = False  # any speech in this dictation
+            auto_stopped = False
 
             def emit(words: list[Word]) -> None:
                 nonlocal phrase_start
@@ -219,7 +229,7 @@ class StreamingEngine(Engine):
                     break
 
                 if fresh:
-                    in_phrase = True
+                    in_phrase = heard = True
                 if not in_phrase:
                     keep = int(PRE_ROLL_S * SAMPLE_RATE)  # silence between phrases: keep a little
                     if len(buffer) > keep:
@@ -245,6 +255,10 @@ class StreamingEngine(Engine):
                         if cut > 0:
                             buffer = buffer[cut:]
                             offset += cut / SAMPLE_RATE
+                if not auto_stopped and should_auto_stop(self.config.auto_stop_s, heard,
+                                                         end - last_voice if heard else end):
+                    auto_stopped = True
+                    self.silence.emit()  # the controller stops us like the hotkey would
                 self._stop.wait(max(0.0, STEP_S - (time.monotonic() - started)))
         except Exception as e:
             log.exception("transcription failed")

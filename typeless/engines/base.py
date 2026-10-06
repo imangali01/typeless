@@ -13,6 +13,7 @@ class Engine(QObject):
     level = Signal(float)  # microphone level 0..1 for the waveform
     status = Signal(str)  # short human-readable state ("Загрузка модели…")
     error = Signal(str)
+    silence = Signal()  # the speaker has stopped talking (see Config.auto_stop_s)
 
     def preload(self) -> None:
         """Heavy initialisation done once at app start (may run in background)."""

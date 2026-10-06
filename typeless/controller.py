@@ -73,6 +73,7 @@ class Controller(QObject):
         engine.level.connect(self.overlay.set_level)
         engine.status.connect(self.overlay.set_status)
         engine.error.connect(self._on_error)
+        engine.silence.connect(self._on_silence)
         engine.preload()
 
     def apply_config(self, config: Config) -> None:
@@ -172,6 +173,12 @@ class Controller(QObject):
         if self.config.live_typing and self._can_type:
             self._type(edit)
         self._refresh_overlay()
+
+    @Slot()
+    def _on_silence(self) -> None:
+        if self.state is State.RECORDING:
+            log.info("auto-stop after silence")
+            self.stop()
 
     @Slot(str)
     def _on_preview(self, text: str) -> None:

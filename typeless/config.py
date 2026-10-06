@@ -35,6 +35,7 @@ class Config:
     profile: str = "general"
     whisper_model: str = "base"  # Whisper engine only: ~0.8 s per pass on i5-13420H; "small" is ~2.5 s
     live_typing: bool = True
+    auto_stop_s: float = 2.0  # finish dictation after this much silence following speech; 0 = off
     clipboard: str = CLIPBOARD_FALLBACK
     show_overlay: bool = True
     overlay_style: str = "line"
