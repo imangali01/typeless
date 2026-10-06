@@ -90,7 +90,7 @@ class LineStyle(Style):
                 else:
                     path.lineTo(x, y + dy)
             grad = QLinearGradient(cx - half, y, cx + half, y)
-            for stop, color in ((0.0, "#00e5ff"), (0.5, "#7c5cff"), (1.0, "#ff4fd8")):
+            for stop, color in zip((0.0, 0.5, 1.0), o.palette.colors()):
                 c = QColor(color)
                 c.setAlpha(int(alpha * presence))
                 grad.setColorAt(stop, c)
@@ -135,14 +135,18 @@ class DropStyle(Style):
             wobble = 1 + (0.06 + level * 0.22) * math.sin(3 * a + o.phase * 1.3) * math.cos(2 * a - o.phase)
             pt = QPointF(center.x() + math.cos(a) * base_r * wobble, center.y() + math.sin(a) * base_r * wobble)
             path.moveTo(pt) if i == 0 else path.lineTo(pt)
+        light, main, deep = o.palette.colors()
         grad = QRadialGradient(center - QPointF(base_r * 0.35, base_r * 0.45), base_r * 1.6)
-        grad.setColorAt(0.0, QColor("#b6fff3"))
-        grad.setColorAt(0.45, QColor("#22d3b6"))
-        grad.setColorAt(1.0, QColor("#0e7c86"))
+        grad.setColorAt(0.0, light)
+        grad.setColorAt(0.45, main)
+        grad.setColorAt(1.0, deep)
         p.setPen(Qt.PenStyle.NoPen)
         glow = QRadialGradient(center, base_r * 2.4)
-        glow.setColorAt(0.0, QColor(34, 211, 182, int(90 * o.presence)))
-        glow.setColorAt(1.0, QColor(34, 211, 182, 0))
+        halo = QColor(main)
+        halo.setAlpha(int(90 * o.presence))
+        glow.setColorAt(0.0, halo)
+        halo.setAlpha(0)
+        glow.setColorAt(1.0, halo)
         p.setBrush(glow)
         p.drawEllipse(center, base_r * 2.4, base_r * 2.4)
         p.setBrush(grad)
@@ -177,7 +181,9 @@ class CinemaStyle(Style):
         pulse = 0.55 + 0.45 * abs(math.sin(o.phase * 0.5)) if o.active else 0.35
         dot = QPointF(rect.left() + 36, rect.bottom() - 34)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(255, 59, 72, int(255 * pulse * o.presence)))
+        rec = QColor(o.palette.main)
+        rec.setAlpha(int(255 * pulse * o.presence))
+        p.setBrush(rec)
         p.drawEllipse(dot, 6, 6)
         p.setFont(_font(9.5, QFont.Weight.Bold))
         p.setPen(QColor(255, 255, 255, int(200 * o.presence)))
@@ -215,14 +221,17 @@ class RingStyle(Style):
         r = (20 + level * 10) * o.presence
         p.setBrush(Qt.BrushStyle.NoBrush)
         # echo rings travel outwards
+        light, main, deep = o.palette.colors()
         for k in range(2):
             t = (o.phase * 0.12 + k * 0.5) % 1.0
-            echo = QColor(255, 140, 66, int(120 * (1 - t) * (0.3 + level) * o.presence))
+            echo = QColor(main)
+            echo.setAlpha(int(min(255, 120 * (1 - t) * (0.3 + level)) * o.presence))
             p.setPen(QPen(echo, 2))
             p.drawEllipse(c, r + t * 26, r + t * 26)
         grad = QLinearGradient(c.x() - r, c.y() - r, c.x() + r, c.y() + r)
-        grad.setColorAt(0.0, QColor(255, 196, 66, int(255 * o.presence)))
-        grad.setColorAt(1.0, QColor(255, 84, 112, int(255 * o.presence)))
+        for stop, color in ((0.0, light), (1.0, deep)):
+            color.setAlpha(int(255 * o.presence))
+            grad.setColorAt(stop, color)
         p.setPen(QPen(grad, 3.2))
         p.drawEllipse(c, r, r)
         # small sweeping arc shows it is alive even in silence
@@ -270,8 +279,9 @@ class PillStyle(Style):
         center = QPointF(pill.left() + 24, pill.center().y())
         radius = 11 + (1.2 if o.active else 0) * abs(math.sin(o.phase / 2))
         grad = QRadialGradient(center - QPointF(3, 3), radius * 1.4)
-        grad.setColorAt(0.0, QColor("#ffb199"))
-        grad.setColorAt(1.0, QColor("#f2384f"))
+        light, main, _ = o.palette.colors()
+        grad.setColorAt(0.0, light)
+        grad.setColorAt(1.0, main)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(grad)
         p.drawEllipse(center, radius, radius)

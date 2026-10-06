@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import replace
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
-    QButtonGroup, QComboBox, QGridLayout, QHBoxLayout, QLineEdit, QPushButton, QScrollArea,
+    QButtonGroup, QColorDialog, QComboBox, QGridLayout, QHBoxLayout, QLineEdit, QPushButton, QScrollArea,
     QStackedWidget, QTextEdit, QVBoxLayout, QWidget,
 )
 
@@ -18,10 +18,11 @@ from ..config import (
 from ..hotkey import GlobalHotkey
 from ..keys import DEFAULT_HOTKEY, Hotkey
 from ..languages import LANGUAGE_MODES, PROFILES
-from ..overlay import STYLES
+from ..overlay import STYLES, palettes
+from ..overlay.palettes import PRESETS
 from . import theme
 from .widgets import (
-    Chip, FlowLayout, KeyCaps, OptionGroup, SettingRow, StylePreview, Toggle, card, label,
+    Chip, FlowLayout, KeyCaps, OptionGroup, SettingRow, StylePreview, Swatch, Toggle, card, label,
 )
 
 VK_ESCAPE = 0x1B
@@ -226,11 +227,36 @@ class SettingsWindow(QWidget):
         box.addWidget(SettingRow("Показывать индикатор", "Анимация и живой текст во время диктовки.", show))
         col.addWidget(frame)
 
+        frame, box = card()
+        self._color_title = label("", "h2")
+        box.addWidget(self._color_title)
+        box.addWidget(label("Цвет запоминается отдельно для каждого стиля. При выборе стиль "
+                            "показывается внизу экрана.", "muted", wrap=True))
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        self._swatches: dict[str, Swatch] = {}
+        for key, pal in PRESETS.items():
+            s = Swatch(pal.light, pal.main, pal.deep, pal.title)
+            s.clicked.connect(lambda _=False, k=key: self._pick_color(k))
+            row.addWidget(s)
+            self._swatches[key] = s
+        self._custom_swatch = Swatch("#ffffff", "#888888", "#333333", "Свой цвет")
+        self._custom_swatch.clicked.connect(lambda: self._pick_color(self._custom_value()))
+        row.addWidget(self._custom_swatch)
+        custom = QPushButton("Свой цвет…")
+        custom.clicked.connect(self._choose_custom_color)
+        row.addSpacing(8)
+        row.addWidget(custom)
+        row.addStretch()
+        box.addLayout(row)
+        col.addWidget(frame)
+
         grid = QGridLayout()
         grid.setSpacing(14)
         self._style_cards: dict[str, StylePreview] = {}
         for i, (key, style) in enumerate(STYLES.items()):
             c = StylePreview(style)
+            c.set_color(self.config.overlay_colors.get(key))
             c.clicked.connect(lambda k=key: self._pick_style(k))
             grid.addWidget(c, i // 2, i % 2)
             self._style_cards[key] = c
@@ -242,9 +268,41 @@ class SettingsWindow(QWidget):
     def _pick_style(self, key: str, emit: bool = True) -> None:
         for k, c in self._style_cards.items():
             c.set_selected(k == key)
+        self._style_key = key
+        self._sync_swatches()
         if emit:
             self._set(overlay_style=key)
             self.style_demo.emit(key)
+
+    def _custom_value(self) -> str:
+        current = self.config.overlay_colors.get(self._style_key, "")
+        return current if current.startswith("#") else self._last_custom
+
+    _last_custom = "#3fa7ff"
+
+    def _sync_swatches(self) -> None:
+        choice = self.config.overlay_colors.get(self._style_key) or palettes.STYLE_DEFAULTS.get(self._style_key)
+        self._color_title.setText(f"Цвет: {STYLES[self._style_key].title}")
+        for k, s in self._swatches.items():
+            s.setChecked(k == choice)
+        custom = choice if choice and choice.startswith("#") else self._last_custom
+        pal = palettes.from_color(custom)
+        self._custom_swatch.colors = (pal.light, pal.main, pal.deep)
+        self._custom_swatch.setChecked(bool(choice and choice.startswith("#")))
+        self._custom_swatch.update()
+
+    def _pick_color(self, choice: str) -> None:
+        if choice.startswith("#"):
+            self._last_custom = choice
+        self._set(overlay_colors={**self.config.overlay_colors, self._style_key: choice})
+        self._style_cards[self._style_key].set_color(choice)
+        self._sync_swatches()
+        self.style_demo.emit(self._style_key)
+
+    def _choose_custom_color(self) -> None:
+        color = QColorDialog.getColor(QColor(self._custom_value()), self, "Цвет индикатора")
+        if color.isValid():
+            self._pick_color(color.name())
 
     def _page_dictionary(self, last_text: str) -> QWidget:
         page, col = self._page("Словарь", "Термины подсказывают модели написание, исправления заменяют "

@@ -14,13 +14,14 @@ from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QWidget
 
 from . import anchor
+from .palettes import Palette, resolve
 from .styles import DEFAULT_STYLE, FOLLOW_CARET, FOLLOW_MOUSE, STYLES, Style
 
 HISTORY = 24  # waveform samples kept
 
 
 class Overlay(QWidget):
-    def __init__(self, style: str = DEFAULT_STYLE) -> None:
+    def __init__(self, style: str = DEFAULT_STYLE, color: str | None = None) -> None:
         super().__init__(
             None,
             Qt.WindowType.FramelessWindowHint
@@ -32,6 +33,7 @@ class Overlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.style_: Style = STYLES.get(style, STYLES[DEFAULT_STYLE])
+        self.palette: Palette = resolve(self.style_.key, color)
 
         # state read by styles
         self.confirmed = ""
@@ -77,8 +79,11 @@ class Overlay(QWidget):
         return anim
 
     # --- public API ----------------------------------------------------------
-    def set_style(self, key: str) -> None:
+    def set_style(self, key: str, color: str | None = None) -> None:
+        """color: preset key or '#rrggbb'; None means the style's default palette."""
         self.style_ = STYLES.get(key, STYLES[DEFAULT_STYLE])
+        self.palette = resolve(self.style_.key, color)
+        self.update()
         if self.isVisible():
             self._place()
 

@@ -250,6 +250,10 @@ class StylePreview(QFrame):
         self._selected = on
         self.update()
 
+    def set_color(self, color: str | None) -> None:
+        self._state.set_style(self.style_obj.key, color)
+        self.update()
+
     def mousePressEvent(self, event) -> None:
         self.clicked.emit()
 
@@ -300,6 +304,32 @@ class StylePreview(QFrame):
                    Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                    p.fontMetrics().elidedText(self.style_obj.description, Qt.TextElideMode.ElideRight,
                                               int(outer.width() - 28)))
+
+
+class Swatch(QAbstractButton):
+    """Round colour sample showing a palette's gradient; ring when selected."""
+
+    def __init__(self, light: str, main: str, deep: str, tip: str) -> None:
+        super().__init__()
+        self.colors = (light, main, deep)
+        self.setToolTip(tip)
+        self.setCheckable(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedSize(38, 38)
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if self.isChecked():
+            p.setPen(QPen(QColor(theme.TEXT), 2))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QRectF(1.5, 1.5, 35, 35))
+        grad = QLinearGradient(6, 6, 32, 32)
+        for stop, c in zip((0.0, 0.5, 1.0), self.colors):
+            grad.setColorAt(stop, QColor(c))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(grad)
+        p.drawEllipse(QRectF(6, 6, 26, 26))
 
 
 class Chip(QFrame):

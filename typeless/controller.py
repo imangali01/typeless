@@ -39,7 +39,7 @@ class Controller(QObject):
         super().__init__()
         self.config = config
         self.state = State.IDLE
-        self.overlay = Overlay(config.overlay_style)
+        self.overlay = Overlay(config.overlay_style, config.overlay_colors.get(config.overlay_style))
         self.engine: Engine | None = None
         self.last_text = ""
         self._live = LiveText()
@@ -47,6 +47,7 @@ class Controller(QObject):
         self._can_type = True  # focus was in a text field when dictation started
         self._missed = ""  # text we could not type because focus moved
         self._send_enter = False
+        self._restart = False  # hotkey pressed while the previous dictation was finishing
         self._set_engine(create_engine(config))
 
     # --- engine wiring --------------------------------------------------------
@@ -68,7 +69,8 @@ class Controller(QObject):
         engine_changed = (config.engine, config.whisper_model) != (
             self.config.engine, self.config.whisper_model)
         self.config = config
-        self.overlay.set_style(config.overlay_style)
+        if not self.overlay.demo_running:
+            self.overlay.set_style(config.overlay_style, config.overlay_colors.get(config.overlay_style))
         if engine_changed:
             if self.state is not State.IDLE:
                 self.engine.stop()
@@ -80,7 +82,7 @@ class Controller(QObject):
         """Show the chosen overlay style at the bottom of the screen with a fake dictation."""
         if self.state is not State.IDLE:
             return
-        self.overlay.set_style(key)
+        self.overlay.set_style(key, self.config.overlay_colors.get(key))
         self.overlay.demo()
 
     # --- session --------------------------------------------------------------
@@ -91,6 +93,8 @@ class Controller(QObject):
             self.start()
         elif self.state is State.RECORDING:
             self.stop()
+        else:  # still typing the tail of the previous dictation: start again right after
+            self._restart = True
 
     @Slot()
     def submit(self) -> None:
@@ -99,7 +103,6 @@ class Controller(QObject):
             return
         log.info("submit")
         self._send_enter = True
-        self.overlay.dismiss()
         self.stop()
 
     def start(self) -> None:
@@ -123,7 +126,8 @@ class Controller(QObject):
 
     def stop(self) -> None:
         self._set_state(State.FINISHING)
-        self.overlay.active = False
+        # Hide right away: the last pass can take seconds, the tail is typed in the background.
+        self.overlay.dismiss()
         self.engine.stop()
 
     def _set_state(self, state: State) -> None:
@@ -156,12 +160,8 @@ class Controller(QObject):
         if text and self._can_type and not self.config.live_typing:
             self._type(Edit(text=text))
         self._finish_clipboard(text)
-        if self._send_enter:
-            if self._can_type and not self._missed:
-                typer.press_combo([VK_RETURN])  # queued after the remaining text
-        else:
-            self._refresh_overlay()
-            self.overlay.finish()
+        if self._send_enter and self._can_type and not self._missed:
+            typer.press_combo([VK_RETURN])  # queued after the remaining text
         self._set_state(State.IDLE)
         log.info("dictation finished: %r", text)
         if text:
@@ -171,6 +171,9 @@ class Controller(QObject):
             new_terms = suggest_terms(text, known)
             if new_terms:
                 self.terms_suggested.emit(new_terms)
+        if self._restart:
+            self._restart = False
+            self.start()
 
     def _finish_clipboard(self, text: str) -> None:
         if not text:
