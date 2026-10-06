@@ -31,6 +31,13 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
 $iscc = @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") |
     Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $iscc) { throw "Inno Setup not found: winget install JRSoftware.InnoSetup" }
-& $iscc "/DAppVersion=$version" packaging\typeless.iss
-if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
+# Windows Defender sometimes scans the fresh setup exe while Inno writes its icon
+# ("EndUpdateResource failed"); a retry a few seconds later succeeds.
+foreach ($attempt in 1..3) {
+    & $iscc /Q "/DAppVersion=$version" packaging\typeless.iss
+    if ($LASTEXITCODE -eq 0) { break }
+    if ($attempt -eq 3) { throw "Inno Setup failed" }
+    Write-Host "Inno Setup failed (attempt $attempt), retrying..."
+    Start-Sleep -Seconds 5
+}
 Write-Host "Done: dist\TypelessSetup-$version.exe"

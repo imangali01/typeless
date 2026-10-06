@@ -41,11 +41,11 @@ CLIPBOARD_MODES = [
     (CLIPBOARD_NEVER, "Никогда"),
 ]
 LINES = [("0", "Авто"), ("1", "1"), ("2", "2"), ("3", "3"), ("4", "4")]
-PAGES = [
-    ("general", "Основное"),
-    ("recognition", "Распознавание"),
-    ("look", "Индикатор"),
-    ("dictionary", "Словарь"),
+PAGES = [  # key, title, monochrome glyph (Segoe Fluent Icons)
+    ("general", "Основное", ""),
+    ("recognition", "Распознавание", ""),
+    ("look", "Индикатор", ""),
+    ("dictionary", "Словарь", ""),
 ]
 
 
@@ -79,7 +79,7 @@ class SettingsWindow(QWidget):
             "look": self._page_look,
             "dictionary": lambda: self._page_dictionary(last_text),
         }
-        for key, _ in PAGES:
+        for key, *_ in PAGES:
             self.stack.addWidget(self._scroll(builders[key]()))
         self.open_page("general")
 
@@ -107,8 +107,8 @@ class SettingsWindow(QWidget):
         col.addSpacing(18)
         self._nav = QButtonGroup(self)
         self._nav_buttons: dict[str, NavKey] = {}
-        for key, title in PAGES:
-            b = NavKey(title)
+        for key, title, glyph in PAGES:
+            b = NavKey(title, glyph)
             b.clicked.connect(lambda _=False, k=key: self.open_page(k))
             self._nav.addButton(b)
             self._nav_buttons[key] = b
@@ -148,7 +148,7 @@ class SettingsWindow(QWidget):
     def open_page(self, key: str) -> None:
         if key not in self._nav_buttons:
             key = "general"
-        index = [k for k, _ in PAGES].index(key)
+        index = [k for k, *_ in PAGES].index(key)
         self.stack.setCurrentIndex(index)
         self._nav_buttons[key].setChecked(True)
 
@@ -206,7 +206,7 @@ class SettingsWindow(QWidget):
         self._rule_keys = QLineEdit()
         self._rule_keys.setPlaceholderText("Ctrl+D")
         self._rule_keys.returnPressed.connect(self._add_rule)
-        add = KeyButton("Добавить")
+        add = KeyButton("Добавить", default=True)
         add.clicked.connect(self._add_rule)
         row.addWidget(self._rule_app, 1)
         row.addWidget(self._rule_keys, 1)
