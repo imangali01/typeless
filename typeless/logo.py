@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import struct
 
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QRectF, Qt
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QRadialGradient
 
 IDLE_BARS = ("#00e5ff", "#7c5cff", "#ff4fd8")
@@ -23,51 +23,79 @@ def _draw(p: QPainter, recording: bool, small: bool) -> None:
     concave dish carrying the waveform legend.
     """
     p.setPen(Qt.PenStyle.NoPen)
-    skirt = QRectF(3, 7, 58, 55)
-    top = QRectF(10, 3, 44, 42) if not small else QRectF(8, 3, 48, 44)
+    skirt = QRectF(4, 7, 56, 52)  # footprint of the key at the bottom
+    top = QRectF(11, 3, 42, 39) if not small else QRectF(9, 3, 46, 41)  # dished top, sits towards the back
 
-    # soft contact shadow
-    shadow = QRadialGradient(32, 60, 30)
-    shadow.setColorAt(0, QColor(0, 0, 0, 70))
+    # contact shadow on the desk
+    shadow = QRadialGradient(32, 59, 30)
+    shadow.setColorAt(0, QColor(0, 0, 0, 90))
     shadow.setColorAt(1, QColor(0, 0, 0, 0))
     p.setBrush(shadow)
-    p.drawEllipse(QRectF(4, 54, 56, 10))
+    p.drawEllipse(QRectF(2, 52, 60, 12))
 
-    # skirt (the walls): lighter at the top edge, darker towards the bottom
-    walls = QLinearGradient(0, skirt.top(), 0, skirt.bottom())
-    walls.setColorAt(0.0, QColor("#d9dce4"))
-    walls.setColorAt(1.0, QColor("#9ea3b2"))
-    p.setBrush(walls)
-    p.drawRoundedRect(skirt, 12, 12)
+    body = QPainterPath()
+    body.addRoundedRect(skirt, 11, 11)
+    body.addRoundedRect(top, 8, 8)
+    body = body.simplified()
+    p.save()
+    p.setClipPath(body)
 
-    # front wall is the most visible face: shade it a bit darker
-    front = QPainterPath()
-    front.moveTo(top.left() + 4, top.bottom() - 2)
-    front.lineTo(top.right() - 4, top.bottom() - 2)
-    front.lineTo(skirt.right() - 6, skirt.bottom() - 1)
-    front.lineTo(skirt.left() + 6, skirt.bottom() - 1)
-    front.closeSubpath()
-    face = QLinearGradient(0, top.bottom(), 0, skirt.bottom())
-    face.setColorAt(0.0, QColor(120, 125, 140, 70))
-    face.setColorAt(1.0, QColor(90, 95, 110, 120))
-    p.setBrush(face)
-    p.drawPath(front)
+    # base colour of the walls
+    p.setBrush(QColor("#bfc3cc"))
+    p.drawPath(body)
 
-    # top surface with a concave dish
+    def wall(points, gradient):
+        path = QPainterPath()
+        path.moveTo(*points[0])
+        for pt in points[1:]:
+            path.lineTo(*pt)
+        path.closeSubpath()
+        p.setBrush(gradient)
+        p.drawPath(path)
+
+    # light comes from the upper left: left wall bright, right wall in shade
+    left = QLinearGradient(skirt.left(), 0, top.left(), 0)
+    left.setColorAt(0, QColor("#c9ccd4"))
+    left.setColorAt(1, QColor("#dfe2e8"))
+    wall([(top.left(), top.top()), (top.left(), top.bottom()), (skirt.left(), skirt.bottom()),
+          (skirt.left(), skirt.top())], left)
+    right = QLinearGradient(top.right(), 0, skirt.right(), 0)
+    right.setColorAt(0, QColor("#b3b7c1"))
+    right.setColorAt(1, QColor("#979ca8"))
+    wall([(top.right(), top.top()), (skirt.right(), skirt.top()), (skirt.right(), skirt.bottom()),
+          (top.right(), top.bottom())], right)
+    # front wall: the biggest visible face, darker towards the desk
+    front = QLinearGradient(0, top.bottom(), 0, skirt.bottom())
+    front.setColorAt(0, QColor("#c4c8d0"))
+    front.setColorAt(1, QColor("#9297a3"))
+    wall([(top.left(), top.bottom()), (top.right(), top.bottom()), (skirt.right(), skirt.bottom()),
+          (skirt.left(), skirt.bottom())], front)
+    # bright edge where the wall meets the desk catches a little light
+    p.setPen(QPen(QColor(255, 255, 255, 60), 1))
+    p.drawLine(QPointF(skirt.left() + 8, skirt.bottom() - 1.2), QPointF(skirt.right() - 8, skirt.bottom() - 1.2))
+    p.setPen(Qt.PenStyle.NoPen)
+    p.restore()
+
+    # top surface: cylindrical dish — darker at the left/right edges, bright band in the middle
     cap = QLinearGradient(0, top.top(), 0, top.bottom())
     cap.setColorAt(0.0, QColor("#ffffff"))
-    cap.setColorAt(1.0, QColor("#e3e5ec"))
+    cap.setColorAt(1.0, QColor("#e4e6ec"))
     p.setBrush(cap)
-    p.drawRoundedRect(top, 9, 9)
-    dish = QRadialGradient(top.center().x(), top.center().y() - 3, top.width() * 0.62)
-    dish.setColorAt(0.0, QColor(255, 255, 255, 0))
-    dish.setColorAt(0.75, QColor(180, 185, 200, 40))
-    dish.setColorAt(1.0, QColor(150, 155, 172, 110))
+    p.drawRoundedRect(top, 8, 8)
+    dish = QLinearGradient(top.left(), 0, top.right(), 0)
+    dish.setColorAt(0.0, QColor(140, 146, 162, 80))
+    dish.setColorAt(0.22, QColor(255, 255, 255, 0))
+    dish.setColorAt(0.78, QColor(255, 255, 255, 0))
+    dish.setColorAt(1.0, QColor(120, 126, 142, 95))
     p.setBrush(dish)
-    p.drawRoundedRect(top, 9, 9)
-    p.setPen(QPen(QColor(255, 255, 255, 200), 1.2))
+    p.drawRoundedRect(top, 8, 8)
+    # crease where the top turns into the front wall
+    p.setPen(QPen(QColor(70, 76, 92, 70), 1.2))
+    p.drawLine(QPointF(top.left() + 7, top.bottom() + 0.4), QPointF(top.right() - 7, top.bottom() + 0.4))
+    # rim highlight along the back and left edges
+    p.setPen(QPen(QColor(255, 255, 255, 230), 1.1))
     p.setBrush(Qt.BrushStyle.NoBrush)
-    p.drawRoundedRect(top.adjusted(0.6, 0.6, -0.6, -0.6), 8.5, 8.5)
+    p.drawRoundedRect(top.adjusted(0.6, 0.6, -0.6, -0.6), 7.5, 7.5)
     p.setPen(Qt.PenStyle.NoPen)
 
     # legend: waveform bars
