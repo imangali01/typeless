@@ -12,7 +12,7 @@ from PySide6.QtGui import QGuiApplication
 from . import app_rules, typer
 from . import winapi as w
 from .cleanup import apply_corrections, clean, is_hallucination
-from .config import CLIPBOARD_ALWAYS, CLIPBOARD_NEVER, Config
+from .config import CLIPBOARD_ALWAYS, CLIPBOARD_NEVER, ENGINE_WHISPER, Config
 from .engines import Engine, create_engine
 from .focus import focus_is_editable
 from .live_text import Edit, LiveText
@@ -20,6 +20,7 @@ from .overlay import Overlay
 from .overlay.textopts import TextOptions
 from .terms import suggest_terms
 from .toast import Toast
+from .vocab import fix_terms, vocabulary
 
 log = logging.getLogger(__name__)
 
@@ -75,8 +76,8 @@ class Controller(QObject):
         engine.preload()
 
     def apply_config(self, config: Config) -> None:
-        engine_changed = (config.engine, config.whisper_model) != (
-            self.config.engine, self.config.whisper_model)
+        engine_changed = config.engine != self.config.engine or (
+            config.engine == ENGINE_WHISPER and config.whisper_model != self.config.whisper_model)
         self.config = config
         self.overlay.text = TextOptions.from_dict(config.overlay_text)
         if not self.overlay.demo_running:
@@ -129,7 +130,7 @@ class Controller(QObject):
         self._send_enter = False
         self._set_state(State.RECORDING)
         self.overlay.stop_demo()
-        if self.config.show_overlay and not self.engine.types_natively:
+        if self.config.show_overlay:
             self.overlay.present()  # first, so the user sees a reaction immediately
         QTimer.singleShot(0, self._begin)
 
@@ -163,7 +164,8 @@ class Controller(QObject):
 
     @Slot(str)
     def _on_final(self, text: str) -> None:
-        text = apply_corrections(clean(text), self.config.corrections)
+        text = fix_terms(clean(text), vocabulary(self.config.dictionary, self.config.profile))
+        text = apply_corrections(text, self.config.corrections)
         if not text or is_hallucination(text):
             return
         edit = self._live.on_final(text)

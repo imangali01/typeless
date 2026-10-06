@@ -15,7 +15,8 @@ from PySide6.QtWidgets import (
 
 from .. import __version__, logo
 from ..config import (
-    CLIPBOARD_ALWAYS, CLIPBOARD_FALLBACK, CLIPBOARD_NEVER, ENGINE_WHISPER, ENGINE_WINDOWS, Config, app_dir,
+    CLIPBOARD_ALWAYS, CLIPBOARD_FALLBACK, CLIPBOARD_NEVER, ENGINE_GIGAAM, ENGINE_PARAKEET, ENGINE_WHISPER, Config,
+    app_dir,
 )
 from ..hotkey import GlobalHotkey
 from ..keys import DEFAULT_HOTKEY, Hotkey
@@ -29,11 +30,22 @@ from .widgets import (
 )
 
 VK_ESCAPE = 0x1B
+ENGINES = [
+    (ENGINE_PARAKEET, "Parakeet — рекомендуется"),
+    (ENGINE_GIGAAM, "GigaAM — только русский"),
+    (ENGINE_WHISPER, "Whisper — медленнее"),
+]
+ENGINE_NOTES = {
+    ENGINE_PARAKEET: "Русский и английский, термины латиницей, пунктуация. Быстрый и точный. "
+                     "Модель скачивается один раз, около 670 МБ.",
+    ENGINE_GIGAAM: "Лучше всех понимает русскую речь и быстрее всех, но английские слова пишет "
+                   "с ошибками. Модель скачивается один раз, около 230 МБ.",
+    ENGINE_WHISPER: "Прежний движок: нагружает процессор сильнее и печатает с задержкой. "
+                    "Словарь подсказывает ему написание терминов.",
+}
 MODELS = [
-    ("tiny", "tiny — быстрее всех"),
-    ("base", "base — рекомендуется"),
-    ("small", "small — точнее, медленнее"),
-    ("medium", "medium — очень медленно"),
+    ("base", "base — быстрее"),
+    ("small", "small — точнее, медленно"),
 ]
 CLIPBOARD_MODES = [
     (CLIPBOARD_FALLBACK, "Если некуда печатать"),
@@ -244,17 +256,26 @@ class SettingsWindow(QWidget):
         group.row("Профиль", "", self._combo([(k, t) for k, (t, _) in PROFILES.items()],
                                              self.config.profile, "profile"))
         col.addWidget(group)
-        col.addWidget(label("«Программист» подсказывает модели термины кода: commit, deploy, API.",
+        col.addWidget(label("«Программист» исправляет написание терминов кода: commit, deploy, API.",
                             "footnote", wrap=True))
 
         group = Plate()
-        group.row("Движок", "", self._combo([(ENGINE_WHISPER, "Whisper, локально"),
-                                             (ENGINE_WINDOWS, "Диктовка Windows")],
-                                            self.config.engine, "engine"))
-        group.row("Модель", "", self._combo(MODELS, self.config.whisper_model, "whisper_model"))
+        engine = self._combo(ENGINES, self.config.engine, "engine")
+        group.row("Движок", "", engine)
         col.addWidget(group)
-        col.addWidget(label("Whisper работает на компьютере. Диктовка Windows отправляет звук в облако Microsoft.",
-                            "footnote", wrap=True))
+        note = label("", "footnote", wrap=True)
+        col.addWidget(note)
+        whisper = Plate()
+        whisper.row("Модель Whisper", "", self._combo(MODELS, self.config.whisper_model, "whisper_model"))
+        col.addWidget(whisper)
+
+        def show_engine(_=None) -> None:
+            key = engine.currentData()
+            note.setText(ENGINE_NOTES.get(key, "") + " Всё распознаётся на компьютере, звук никуда не уходит.")
+            whisper.setVisible(key == ENGINE_WHISPER)
+
+        engine.currentIndexChanged.connect(show_engine)
+        show_engine()
         col.addStretch()
         return page
 

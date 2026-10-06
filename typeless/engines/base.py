@@ -14,9 +14,6 @@ class Engine(QObject):
     status = Signal(str)  # short human-readable state ("Загрузка модели…")
     error = Signal(str)
 
-    #: True when the engine inserts text itself (we must not type or show text).
-    types_natively = False
-
     def preload(self) -> None:
         """Heavy initialisation done once at app start (may run in background)."""
 

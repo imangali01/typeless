@@ -19,6 +19,7 @@ if ($LASTEXITCODE -ne 0) { throw "tests failed" }
     --icon packaging\typeless.ico `
     --collect-all faster_whisper `
     --collect-all ctranslate2 `
+    --collect-all onnx_asr `
     --collect-binaries onnxruntime `
     --collect-data onnxruntime `
     --collect-all _sounddevice_data `

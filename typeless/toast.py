@@ -1,11 +1,12 @@
-"""A tiny on-screen confirmation ("Скопировано в буфер обмена") instead of a Windows notification.
+"""A tiny on-screen message ("Скопировано в буфер обмена") instead of a Windows notification.
 
-Shows for ~1.5 s at the bottom centre, never takes focus, clicks pass through.
+Shows for a moment at the bottom centre and never takes focus. A plain toast lets clicks
+pass through; a clickable one (new dictionary terms) opens something when clicked.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEasingCurve, QPointF, QRectF, Qt, QTimer, QVariantAnimation
+from PySide6.QtCore import QEasingCurve, QPointF, QRectF, Qt, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QGuiApplication, QPainter, QPen, QRadialGradient
 from PySide6.QtWidgets import QWidget
 
@@ -15,15 +16,16 @@ BOTTOM_MARGIN = 72
 
 
 class Toast(QWidget):
-    def __init__(self) -> None:
-        super().__init__(
-            None,
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.Tool
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.WindowTransparentForInput
-            | Qt.WindowType.WindowDoesNotAcceptFocus,
-        )
+    clicked = Signal()
+
+    def __init__(self, clickable: bool = False) -> None:
+        flags = (Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
+                 | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowDoesNotAcceptFocus)
+        if not clickable:
+            flags |= Qt.WindowType.WindowTransparentForInput
+        super().__init__(None, flags)
+        if clickable:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self._text = ""
@@ -38,7 +40,7 @@ class Toast(QWidget):
         self._hide.setSingleShot(True)
         self._hide.timeout.connect(lambda: self._animate(0.0, 220))
 
-    def show_message(self, text: str) -> None:
+    def show_message(self, text: str, ms: int = SHOW_MS) -> None:
         self._text = text
         metrics = QFontMetricsF(self._font)
         w, h = int(metrics.horizontalAdvance(text) + 64), 44
@@ -46,7 +48,12 @@ class Toast(QWidget):
         self.setGeometry(screen.center().x() - w // 2, screen.bottom() - h - BOTTOM_MARGIN, w, h + 8)
         self.show()
         self._animate(1.0, 160)
-        self._hide.start(SHOW_MS)
+        self._hide.start(ms)
+
+    def mousePressEvent(self, event) -> None:
+        self._hide.stop()
+        self._animate(0.0, 160)
+        self.clicked.emit()
 
     def _animate(self, end: float, ms: int) -> None:
         self._anim.stop()

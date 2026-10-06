@@ -49,7 +49,9 @@ class LocalAgreement:
         """Feed a new hypothesis; returns (newly confirmed words, tentative tail)."""
         cur = self._fresh(words)
         n = 0
-        while n < len(cur) and n < len(self._prev) and cur[n].norm == self._prev[n].norm:
+        # Never the last word: it may be cut mid-word or carry a full stop the model put
+        # there only because the audio ends ("Мы написали."). Pauses flush it soon anyway.
+        while n < len(cur) - 1 and n < len(self._prev) and cur[n].norm == self._prev[n].norm:
             n += 1
         confirmed, tail = cur[:n], cur[n:]
         self.committed += confirmed
@@ -83,6 +85,23 @@ def trim_point(committed: list[Word], offset: float, buffer_s: float, soft: floa
     if buffer_s > hard and inside:
         return inside[-1].end
     return None
+
+
+_FULL_STOP = (".", "!", "?", "…")
+
+
+def continue_sentence(prev: str, words: list[Word]) -> list[Word]:
+    """A phrase recognised on its own starts with a capital even when the speaker only
+    paused mid-sentence ("детали, А потом"): lower it unless the text before ended a sentence.
+    Only Cyrillic, so English names and acronyms keep their case."""
+    if not words or not prev.strip() or prev.rstrip().endswith(_FULL_STOP):
+        return words
+    first = words[0]
+    text = first.text.strip()
+    if not text or not ("А" <= text[0] <= "Я" or text[0] == "Ё") or any(c.isupper() for c in text[1:]):
+        return words
+    lowered = first.text.replace(text[0], text[0].lower(), 1)
+    return [Word(first.start, first.end, lowered)] + words[1:]
 
 
 def join_words(words: list[Word]) -> str:

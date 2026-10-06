@@ -21,10 +21,12 @@ from .config import Config, app_dir
 from .controller import Controller, State
 from .hotkey import GlobalHotkey
 from .keys import Hotkey
+from .toast import Toast
 from .ui.settings_window import SettingsWindow
 
 log = logging.getLogger("typeless")
 
+TERMS_TOAST_MS = 5000  # long enough to read and click
 IPC_NAME = f"typeless-{os.environ.get('USERNAME', 'user')}"
 
 
@@ -64,6 +66,8 @@ class TrayApp:
         self.controller.state_changed.connect(self._on_state)
         self.controller.notify.connect(self._notify)
         self.controller.terms_suggested.connect(self._on_terms)
+        self.terms_toast = Toast(clickable=True)
+        self.terms_toast.clicked.connect(lambda: self.open_settings("dictionary"))
         self.controller.dictated.connect(self._on_dictated)
         self._settings: SettingsWindow | None = None
         self._on_state(State.IDLE)
@@ -104,8 +108,9 @@ class TrayApp:
         before = list(settings.config.suggested_terms)
         settings.add_suggestions(words)
         if settings.config.suggested_terms != before:
-            self._notify("Новые термины", f"{', '.join(words)} — добавить в словарь? Нажмите, чтобы открыть.",
-                         "dictionary")
+            shown = ", ".join(words[:3]) + ("…" if len(words) > 3 else "")
+            self.terms_toast.show_message(f"Новые термины: {shown} — нажмите, чтобы добавить в словарь",
+                                          TERMS_TOAST_MS)
 
     def _on_dictated(self, text: str) -> None:
         if self._settings is not None:
@@ -159,7 +164,7 @@ def _setup_logging() -> None:
         handlers.append(logging.StreamHandler())
     logging.basicConfig(level=logging.INFO, handlers=handlers,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    for noisy in ("faster_whisper", "httpx", "comtypes"):
+    for noisy in ("faster_whisper", "onnx_asr", "httpx", "huggingface_hub", "comtypes"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 

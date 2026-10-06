@@ -1,4 +1,4 @@
-from typeless.agreement import LocalAgreement, Word, join_words, trim_point
+from typeless.agreement import LocalAgreement, Word, continue_sentence, join_words, trim_point
 
 
 def words(*items):
@@ -21,21 +21,28 @@ def test_agreeing_prefix_is_confirmed_once():
     la.update(words("привет", "кот"))
     confirmed, tail = la.update(words("привет", "как", "дела"))
     assert texts(confirmed) == ["привет"] and texts(tail) == ["как", "дела"]
-    confirmed, _ = la.update(words("привет", "как", "дела"))
-    assert texts(confirmed) == ["как", "дела"]
+    confirmed, tail = la.update(words("привет", "как", "дела"))
+    assert texts(confirmed) == ["как"] and texts(tail) == ["дела"]
+
+
+def test_last_word_waits_for_flush():
+    la = LocalAgreement()
+    la.update(words("Мы", "написали."))
+    confirmed, tail = la.update(words("Мы", "написали."))
+    assert texts(confirmed) == ["Мы"] and texts(tail) == ["написали."]
 
 
 def test_punctuation_change_still_agrees():
     la = LocalAgreement()
-    la.update(words("привет", "мир"))
-    confirmed, _ = la.update(words("Привет,", "мир"))
+    la.update(words("привет", "мир", "наш"))
+    confirmed, _ = la.update(words("Привет,", "мир", "наш"))
     assert texts(confirmed) == ["Привет,", "мир"]
 
 
 def test_overlap_with_committed_tail_is_dropped():
     la = LocalAgreement()
-    la.update(words("один", "два"))
-    la.update(words("один", "два"))
+    la.update(words("один", "два", "и"))
+    la.update(words("один", "два", "и"))
     # after trimming the buffer the model may re-emit the last committed word
     shifted = [Word(0.85, 1.2, " два"), Word(1.3, 1.7, " три")]
     _, tail = la.update(shifted)
@@ -71,3 +78,18 @@ def test_trim_ignores_words_already_cut():
 
 def test_join_words():
     assert join_words(words("Привет,", "как", "дела?")) == "Привет, как дела?"
+
+
+def test_phrase_after_mid_sentence_pause_continues_lowercase():
+    assert texts(continue_sentence("детали,", words("А", "потом"))) == ["а", "потом"]
+    assert texts(continue_sentence("API", words("Потому", "что"))) == ["потому", "что"]
+
+
+def test_phrase_after_full_stop_or_at_start_keeps_capital():
+    assert texts(continue_sentence("утро.", words("Нужно"))) == ["Нужно"]
+    assert texts(continue_sentence("", words("Привет"))) == ["Привет"]
+
+
+def test_latin_words_and_acronyms_keep_case():
+    assert texts(continue_sentence("в", words("Slack"))) == ["Slack"]
+    assert texts(continue_sentence("в", words("СССР"))) == ["СССР"]
