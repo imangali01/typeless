@@ -74,12 +74,28 @@ ICON_COLORS = {
 }
 
 
+def title_bar(win_id: int, t: Tokens) -> None:
+    """Native Windows frame, tinted to match the window (dark/light)."""
+    import ctypes
+
+    try:
+        dark = ctypes.c_int(1 if t.dark else 0)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(int(win_id), 20, ctypes.byref(dark), ctypes.sizeof(dark))
+        r, g, b = (int(t.sidebar[i:i + 2], 16) for i in (1, 3, 5))
+        caption = ctypes.c_int(r | (g << 8) | (b << 16))  # COLORREF 0x00BBGGRR
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(int(win_id), 35, ctypes.byref(caption), ctypes.sizeof(caption))
+    except Exception:
+        pass
+
+
 def stylesheet(t: Tokens) -> str:
     return f"""
 QWidget {{ background: {t.window}; color: {t.text}; font-family: 'Segoe UI Variable Text', 'Segoe UI'; font-size: 10pt; }}
 QWidget#sidebar {{ background: {t.sidebar}; border-right: 1px solid {t.separator}; }}
 QLabel {{ background: transparent; }}
-QLabel#pageTitle {{ font-size: 12.5pt; font-weight: 700; }}
+QLabel#pageTitle {{ font-size: 17pt; font-weight: 600; }}
+QPushButton#link {{ background: transparent; border: none; color: {t.secondary}; padding: 2px 0; font-size: 9pt; }}
+QPushButton#link:hover {{ color: {t.text}; }}
 QLabel#groupHeader {{ font-size: 9.5pt; font-weight: 600; color: {t.text}; padding-left: 10px; }}
 QLabel#footnote {{ font-size: 8.5pt; color: {t.secondary}; padding-left: 10px; }}
 QLabel#rowTitle {{ font-size: 10pt; }}

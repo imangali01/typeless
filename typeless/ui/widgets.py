@@ -157,14 +157,10 @@ class Combo(QComboBox):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         box = QRectF(self.width() - 22, (self.height() - 16) / 2, 16, 16)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(t.accent))
-        p.drawRoundedRect(box, 4, 4)
-        p.setPen(QPen(QColor("#ffffff"), 1.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
+        p.setPen(QPen(QColor(t.secondary), 1.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
                       Qt.PenJoinStyle.RoundJoin))
         cx, cy = box.center().x(), box.center().y()
-        p.drawPolyline([QPointF(cx - 3, cy - 1.5), QPointF(cx, cy - 4.5), QPointF(cx + 3, cy - 1.5)])
-        p.drawPolyline([QPointF(cx - 3, cy + 1.5), QPointF(cx, cy + 4.5), QPointF(cx + 3, cy + 1.5)])
+        p.drawPolyline([QPointF(cx - 3.5, cy - 1.5), QPointF(cx, cy + 2), QPointF(cx + 3.5, cy - 1.5)])
 
 
 class Toggle(QAbstractButton):
@@ -230,23 +226,21 @@ class NavKey(QPushButton):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         r = QRectF(self.rect()).adjusted(0, 1, 0, -1)
         selected = self.isChecked()
-        if selected:
+        if selected or self.underMouse():
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(t.accent))
+            fill = QColor(t.text)
+            fill.setAlpha((28 if t.dark else 20) if selected else 12)
+            p.setBrush(fill)
             p.drawRoundedRect(r, 6, 6)
-        icon = QRectF(r.left() + 8, r.center().y() - 10, 20, 20)
-        grad = QLinearGradient(icon.topLeft(), icon.bottomLeft())
-        grad.setColorAt(0, QColor(self._color).lighter(118))
-        grad.setColorAt(1, QColor(self._color))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(grad)
-        p.drawRoundedRect(icon, 5, 5)
-        p.setFont(theme.icon_font(9))
-        p.setPen(QColor("#ffffff"))
-        p.drawText(icon, Qt.AlignmentFlag.AlignCenter, self._glyph)
-        p.setFont(theme.font(10))
-        p.setPen(QColor(t.selection_text if selected else t.text))
-        p.drawText(r.adjusted(38, 0, -6, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self.text())
+        p.setFont(theme.font(10, QFont.Weight.DemiBold if selected else QFont.Weight.Normal))
+        p.setPen(QColor(t.text if selected else t.secondary))
+        p.drawText(r.adjusted(12, 0, -6, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self.text())
+
+    def enterEvent(self, event) -> None:
+        self.update()
+
+    def leaveEvent(self, event) -> None:
+        self.update()
 
 
 class TrafficLights(QWidget):

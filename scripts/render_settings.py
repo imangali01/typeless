@@ -20,7 +20,7 @@ config = Config(dictionary=["Kubernetes", "Terraform", "ClickHouse"], correction
 win = SettingsWindow(config, GlobalHotkey(DEFAULT_HOTKEY), make_icon(False),
                      "Сегодня обсудим ттермен и деплой на кубернитис.")
 win.show()
-for key, *_ in PAGES:
+for key, _ in PAGES:
     win.open_page(key)
     for _ in range(5):
         app.processEvents()
