@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QWidget
 
 from . import anchor
 from .palettes import Palette, resolve
+from .textopts import TextOptions
 from .styles import DEFAULT_STYLE, FOLLOW_CARET, FOLLOW_MOUSE, STYLES, Style
 
 HISTORY = 24  # waveform samples kept
@@ -34,6 +35,7 @@ class Overlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.style_: Style = STYLES.get(style, STYLES[DEFAULT_STYLE])
         self.palette: Palette = resolve(self.style_.key, color)
+        self.text = TextOptions()  # user's size / lines / face / font for the live text
 
         # state read by styles
         self.confirmed = ""

@@ -16,6 +16,7 @@ from .engines import Engine, create_engine
 from .focus import focus_is_editable
 from .live_text import Edit, LiveText
 from .overlay import Overlay
+from .overlay.textopts import TextOptions
 from .terms import suggest_terms
 
 log = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ class Controller(QObject):
         self.config = config
         self.state = State.IDLE
         self.overlay = Overlay(config.overlay_style, config.overlay_colors.get(config.overlay_style))
+        self.overlay.text = TextOptions.from_dict(config.overlay_text)
         self.engine: Engine | None = None
         self.last_text = ""
         self._live = LiveText()
@@ -69,6 +71,7 @@ class Controller(QObject):
         engine_changed = (config.engine, config.whisper_model) != (
             self.config.engine, self.config.whisper_model)
         self.config = config
+        self.overlay.text = TextOptions.from_dict(config.overlay_text)
         if not self.overlay.demo_running:
             self.overlay.set_style(config.overlay_style, config.overlay_colors.get(config.overlay_style))
         if engine_changed:

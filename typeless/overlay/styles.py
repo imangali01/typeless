@@ -54,7 +54,7 @@ class LineStyle(Style):
     key = "line"
     title = "Линия голоса"
     description = "Светящаяся линия внизу экрана дрожит от голоса, слова проявляются из размытия"
-    HEIGHT = 190
+    HEIGHT = 250
 
     look = TextLook(font=_font(15, QFont.Weight.Medium), outline=QColor(0, 0, 0, 170),
                     blur_reveal=True, max_lines=2, line_opacity=(1.0, 0.55))
@@ -98,12 +98,13 @@ class LineStyle(Style):
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawPath(path)
 
+        look = o.text.look(self.look)
         tokens = o.tokens()
         if tokens:
-            m = QFontMetricsF(self.look.font, p.device())
-            lines = layout(tokens, m, min(900, rect.width() - 80), self.look.max_lines)
+            m = QFontMetricsF(look.font, p.device())
+            lines = layout(tokens, m, min(900, rect.width() - 80), look.max_lines)
             area = QRectF(rect.left(), rect.top(), rect.width(), y - 22 - rect.top())
-            draw_block(p, lines, self.look, area, known_words=o.known_words, reveal=o.reveal)
+            draw_block(p, lines, look, area, known_words=o.known_words, reveal=o.reveal)
 
 
 # --- 2. Drop at the caret ----------------------------------------------------
@@ -112,7 +113,7 @@ class DropStyle(Style):
     title = "Капля у курсора"
     description = "Живая капля рядом с местом ввода, черновик тянется за ней хвостиком"
     follows = FOLLOW_CARET
-    W, H = 480, 70
+    W, H = 560, 80
     font = _font(11)
 
     def geometry(self, area, anchor):
@@ -155,7 +156,7 @@ class DropStyle(Style):
         firm, soft = o.tail_text(10)
         if firm or soft:
             left = center.x() + 24
-            draw_bubble(p, firm, soft, self.font, QPointF(left, center.y()), rect.right() - left - 4, o.presence)
+            draw_bubble(p, firm, soft, o.text.font(self.font), QPointF(left, center.y()), rect.right() - left - 4, o.presence)
 
 
 # --- 3. Cinema subtitles -------------------------------------------------------
@@ -163,7 +164,7 @@ class CinemaStyle(Style):
     key = "cinema"
     title = "Киносубтитры"
     description = "Крупные субтитры по центру, слова загораются как в караоке, точка REC"
-    HEIGHT = 230
+    HEIGHT = 300
 
     look = TextLook(font=_font(21, QFont.Weight.DemiBold), tentative_color=QColor(150, 150, 158),
                     outline=QColor(0, 0, 0, 200), max_lines=2, line_opacity=(1.0, 0.7), line_gap=6)
@@ -193,12 +194,13 @@ class CinemaStyle(Style):
             p.setBrush(QColor(255, 255, 255, int(150 * o.presence)))
             p.drawRoundedRect(QRectF(dot.x() + 50 + i * 5, dot.y() - h / 2, 2.5, h), 1, 1)
 
+        look = o.text.look(self.look)
         tokens = o.tokens()
         if tokens:
-            m = QFontMetricsF(self.look.font, p.device())
-            lines = layout(tokens, m, min(1100, rect.width() - 200), self.look.max_lines)
+            m = QFontMetricsF(look.font, p.device())
+            lines = layout(tokens, m, min(1100, rect.width() - 200), look.max_lines)
             area = QRectF(rect.left(), rect.top(), rect.width(), rect.height() - 62)
-            draw_block(p, lines, self.look, area, known_words=o.known_words, reveal=o.reveal, lift=6)
+            draw_block(p, lines, look, area, known_words=o.known_words, reveal=o.reveal, lift=6)
 
 
 # --- 4. Ring around the mouse ----------------------------------------------------
@@ -207,7 +209,7 @@ class RingStyle(Style):
     title = "Кольцо"
     description = "Кольцо вокруг курсора мыши пульсирует от голоса, текст рядом подсказкой"
     follows = FOLLOW_MOUSE
-    W, H = 520, 160
+    W, H = 600, 170
     CX, CY = 70, 70  # cursor position inside the window
     font = _font(10.5)
 
@@ -242,7 +244,7 @@ class RingStyle(Style):
         firm, soft = o.tail_text(9)
         if firm or soft:
             left = c.x() + 44
-            draw_bubble(p, firm, soft, self.font, QPointF(left, c.y() + 22), rect.right() - left - 4, o.presence)
+            draw_bubble(p, firm, soft, o.text.font(self.font), QPointF(left, c.y() + 22), rect.right() - left - 4, o.presence)
 
 
 # --- 5. Classic pill -------------------------------------------------------------
@@ -250,7 +252,7 @@ class PillStyle(Style):
     key = "pill"
     title = "Классика"
     description = "Тёмная капсула с волной, текст над ней"
-    W, H = 560, 190
+    W, H = 640, 300
     PILL_W, PILL_H = 176, 44
     look = TextLook(font=_font(12, italic=True))
 
@@ -259,18 +261,19 @@ class PillStyle(Style):
 
     def paint(self, p, o, rect):
         pill = QRectF(rect.center().x() - self.PILL_W / 2, rect.bottom() - self.PILL_H - 4, self.PILL_W, self.PILL_H)
+        look = o.text.look(self.look)
         tokens = o.tokens()
         if tokens:
-            m = QFontMetricsF(self.look.font, p.device())
-            lines = layout(tokens, m, rect.width() - 48, self.look.max_lines)
-            w, h = block_size(lines, m, self.look)
+            m = QFontMetricsF(look.font, p.device())
+            lines = layout(tokens, m, rect.width() - 48, look.max_lines)
+            w, h = block_size(lines, m, look)
             panel = QRectF(0, 0, w + 28, h + 16)
             panel.moveCenter(QPointF(rect.center().x(), 0))
             panel.moveBottom(pill.top() - 8)
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(28, 28, 30, 215))
             p.drawRoundedRect(panel, 12, 12)
-            draw_block(p, lines, self.look, panel.adjusted(14, 8, -14, -8),
+            draw_block(p, lines, look, panel.adjusted(14, 8, -14, -8),
                        known_words=o.known_words, reveal=o.reveal)
 
         p.setPen(QColor(255, 255, 255, 22))

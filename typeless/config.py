@@ -36,6 +36,7 @@ class Config:
     show_overlay: bool = True
     overlay_style: str = "line"
     overlay_colors: dict[str, str] = field(default_factory=dict)  # style -> preset key or "#rrggbb"
+    overlay_text: dict = field(default_factory=dict)  # size / lines / face / family, see TextOptions
     autostart: bool = False
     dictionary: list[str] = field(default_factory=list)  # terms that hint spelling to Whisper
     corrections: dict[str, str] = field(default_factory=dict)  # wrong -> right
