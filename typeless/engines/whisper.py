@@ -15,6 +15,7 @@ import numpy as np
 
 from ..agreement import LocalAgreement, Word, join_words
 from ..config import Config
+from ..languages import DEFAULT_LANGUAGE, LANGUAGE_MODES, build_prompt
 from .base import Engine
 
 log = logging.getLogger(__name__)
@@ -56,32 +57,43 @@ class WhisperEngine(Engine):
 
     # --- control -----------------------------------------------------------
     def start(self) -> None:
-        import sounddevice as sd
-
+        # Opening the microphone takes ~0.5 s: do it on the worker so the UI reacts instantly.
         self._chunks = queue.Queue()
         self._stop.clear()
+        self._worker = threading.Thread(target=self._session, name="whisper-stream", daemon=True)
+        self._worker.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _open_stream(self) -> bool:
+        import sounddevice as sd
+
         try:
             self._stream = sd.InputStream(
                 samplerate=SAMPLE_RATE, channels=1, dtype="float32", blocksize=1600,
                 callback=self._on_audio,
             )
             self._stream.start()
+            return True
         except Exception as e:
             log.exception("microphone failed")
             self._stream = None
             self.error.emit(f"Микрофон недоступен: {e}")
-            self.stopped.emit()
-            return
-        self._worker = threading.Thread(target=self._run, name="whisper-stream", daemon=True)
-        self._worker.start()
-        self.started.emit()
+            return False
 
-    def stop(self) -> None:
+    def _close_stream(self) -> None:
         if self._stream is not None:
             self._stream.stop()
             self._stream.close()
             self._stream = None
-        self._stop.set()
+
+    def _session(self) -> None:
+        if not self._open_stream():
+            self.stopped.emit()
+            return
+        self.started.emit()
+        self._run()
 
     def shutdown(self) -> None:
         self.stop()
@@ -102,17 +114,18 @@ class WhisperEngine(Engine):
                 return np.concatenate(parts)
 
     def _prompt(self, agreement: LocalAgreement, offset: float) -> str:
-        terms = ", ".join(self.config.dictionary)
         # Only text whose audio is no longer in the buffer: if the prompt repeats what the
         # model is about to hear, Whisper skips those words in the audio.
         before = [w for w in agreement.committed if w.end <= offset][-30:]
-        return " ".join(p for p in (terms, join_words(before)) if p)
+        return build_prompt(self.config.language_mode, self.config.profile,
+                            self.config.dictionary, join_words(before))
 
     def _transcribe(self, audio: np.ndarray, offset: float, prompt: str) -> list[Word]:
         model = self._ensure_model()
+        mode = LANGUAGE_MODES.get(self.config.language_mode, LANGUAGE_MODES[DEFAULT_LANGUAGE])
         segments, _ = model.transcribe(
             audio,
-            language=self.config.language,
+            language=mode.whisper,
             beam_size=1,
             word_timestamps=True,
             vad_filter=True,
@@ -151,6 +164,7 @@ class WhisperEngine(Engine):
                             offset = agreement.committed_end
                 self._stop.wait(max(0.0, STEP_S - (time.monotonic() - started)))
 
+            self._close_stream()
             buffer = self._drain(buffer)
             if len(buffer) >= 0.2 * SAMPLE_RATE:
                 words = self._transcribe(buffer, offset, self._prompt(agreement, offset))
@@ -160,4 +174,5 @@ class WhisperEngine(Engine):
             log.exception("transcription failed")
             self.error.emit(f"Ошибка распознавания: {e}")
         finally:
+            self._close_stream()
             self.stopped.emit()

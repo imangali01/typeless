@@ -3,3 +3,4 @@ numpy>=1.26
 sounddevice>=0.4.6
 faster-whisper>=1.1
 pytest>=8
+comtypes>=1.4

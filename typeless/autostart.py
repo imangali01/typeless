@@ -12,8 +12,10 @@ LAUNCHER = Path(__file__).resolve().parent.parent / "run.pyw"
 
 
 def command() -> str:
+    if getattr(sys, "frozen", False):  # installed Typeless.exe
+        return f'"{sys.executable}" --background'
     pythonw = Path(sys.executable).with_name("pythonw.exe")
-    return f'"{pythonw}" "{LAUNCHER}"'
+    return f'"{pythonw}" "{LAUNCHER}" --background'
 
 
 def is_enabled() -> bool:

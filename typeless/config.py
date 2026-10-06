@@ -13,6 +13,10 @@ log = logging.getLogger(__name__)
 ENGINE_WINDOWS = "windows"  # proxies to built-in Windows voice typing (Win+H)
 ENGINE_WHISPER = "whisper"  # local faster-whisper
 
+CLIPBOARD_FALLBACK = "fallback"  # copy only when there is no text field to type into
+CLIPBOARD_ALWAYS = "always"
+CLIPBOARD_NEVER = "never"
+
 
 def app_dir() -> Path:
     path = Path(os.environ.get("APPDATA", Path.home())) / "typeless"
@@ -24,12 +28,18 @@ def app_dir() -> Path:
 class Config:
     hotkey: str = "Win+C"
     engine: str = ENGINE_WHISPER
-    language: str = "ru"
+    language_mode: str = "ru_en"
+    profile: str = "general"
     whisper_model: str = "base"  # ~0.8 s per pass on i5-13420H; "small" is ~2.5 s
     live_typing: bool = True
+    clipboard: str = CLIPBOARD_FALLBACK
     show_overlay: bool = True
+    overlay_style: str = "line"
     autostart: bool = False
     dictionary: list[str] = field(default_factory=list)  # terms that hint spelling to Whisper
+    corrections: dict[str, str] = field(default_factory=dict)  # wrong -> right
+    suggested_terms: list[str] = field(default_factory=list)
+    ignored_terms: list[str] = field(default_factory=list)
 
     @classmethod
     def load(cls, path: Path | None = None) -> Config:
@@ -41,6 +51,8 @@ class Config:
         except (OSError, ValueError):
             log.exception("broken config at %s, using defaults", path)
             return cls()
+        if "language" in data and "language_mode" not in data:  # v0.1 config
+            data["language_mode"] = {"ru": "ru_en", "en": "en"}.get(data["language"], "ru_en")
         known = {f.name for f in fields(cls)}
         return cls(**{k: v for k, v in data.items() if k in known})
 

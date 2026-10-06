@@ -5,16 +5,18 @@ from __future__ import annotations
 import logging
 from enum import Enum
 
-from PySide6.QtCore import QObject, Signal, Slot
+from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from PySide6.QtGui import QGuiApplication
 
 from . import typer
 from . import winapi as w
-from .cleanup import clean, is_hallucination
-from .config import Config
+from .cleanup import apply_corrections, clean, is_hallucination
+from .config import CLIPBOARD_ALWAYS, CLIPBOARD_NEVER, Config
 from .engines import Engine, create_engine
+from .focus import focus_is_editable
 from .live_text import Edit, LiveText
 from .overlay import Overlay
+from .terms import suggest_terms
 
 log = logging.getLogger(__name__)
 
@@ -30,15 +32,19 @@ class State(Enum):
 class Controller(QObject):
     state_changed = Signal(object)  # State
     notify = Signal(str, str)  # title, message (shown by the tray)
+    terms_suggested = Signal(list)  # new words worth adding to the dictionary
+    dictated = Signal(str)  # final text of the last dictation
 
     def __init__(self, config: Config) -> None:
         super().__init__()
         self.config = config
         self.state = State.IDLE
-        self.overlay = Overlay()
+        self.overlay = Overlay(config.overlay_style)
         self.engine: Engine | None = None
+        self.last_text = ""
         self._live = LiveText()
         self._target = None
+        self._can_type = True  # focus was in a text field when dictation started
         self._missed = ""  # text we could not type because focus moved
         self._send_enter = False
         self._set_engine(create_engine(config))
@@ -62,6 +68,7 @@ class Controller(QObject):
         engine_changed = (config.engine, config.whisper_model) != (
             self.config.engine, self.config.whisper_model)
         self.config = config
+        self.overlay.set_style(config.overlay_style)
         if engine_changed:
             if self.state is not State.IDLE:
                 self.engine.stop()
@@ -95,7 +102,15 @@ class Controller(QObject):
         self._send_enter = False
         self._set_state(State.RECORDING)
         if self.config.show_overlay and not self.engine.types_natively:
-            self.overlay.present()
+            self.overlay.present()  # first, so the user sees a reaction immediately
+        QTimer.singleShot(0, self._begin)
+
+    def _begin(self) -> None:
+        if self.state is not State.RECORDING:
+            return
+        editable = focus_is_editable()
+        self._can_type = editable is not False
+        log.info("focus editable: %s", editable)
         self.engine.start()
 
     def stop(self) -> None:
@@ -114,11 +129,11 @@ class Controller(QObject):
 
     @Slot(str)
     def _on_final(self, text: str) -> None:
-        text = clean(text)
+        text = apply_corrections(clean(text), self.config.corrections)
         if not text or is_hallucination(text):
             return
         edit = self._live.on_final(text)
-        if self.config.live_typing:
+        if self.config.live_typing and self._can_type:
             self._type(edit)
         self._refresh_overlay()
 
@@ -129,20 +144,40 @@ class Controller(QObject):
 
     @Slot()
     def _on_stopped(self) -> None:
-        if not self.config.live_typing and self._live.committed:
-            self._type(Edit(text=self._live.committed))
-        if self._missed:
-            QGuiApplication.clipboard().setText(self._missed.strip())
-            self.notify.emit("Текст в буфере обмена",
-                             "Окно сменилось во время диктовки — вставьте текст через Ctrl+V.")
+        text = self._live.committed.strip()
+        if text and self._can_type and not self.config.live_typing:
+            self._type(Edit(text=text))
+        self._finish_clipboard(text)
         if self._send_enter:
-            if not self._missed:
+            if self._can_type and not self._missed:
                 typer.press_combo([VK_RETURN])  # queued after the remaining text
         else:
             self._refresh_overlay()
             self.overlay.finish()
         self._set_state(State.IDLE)
-        log.info("dictation finished: %r", self._live.committed)
+        log.info("dictation finished: %r", text)
+        if text:
+            self.last_text = text
+            self.dictated.emit(text)
+            known = self.config.dictionary + self.config.ignored_terms + self.config.suggested_terms
+            new_terms = suggest_terms(text, known)
+            if new_terms:
+                self.terms_suggested.emit(new_terms)
+
+    def _finish_clipboard(self, text: str) -> None:
+        if not text:
+            return
+        if self._missed:
+            copy, reason = self._missed.strip(), "Окно сменилось во время диктовки — вставьте через Ctrl+V."
+        elif not self._can_type and self.config.clipboard != CLIPBOARD_NEVER:
+            copy, reason = text, "Курсор не стоял в поле ввода — вставьте через Ctrl+V."
+        elif self.config.clipboard == CLIPBOARD_ALWAYS:
+            copy, reason = text, ""
+        else:
+            return
+        QGuiApplication.clipboard().setText(copy)
+        if reason:
+            self.notify.emit("Текст скопирован в буфер", reason)
 
     @Slot(str)
     def _on_error(self, message: str) -> None:
