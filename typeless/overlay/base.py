@@ -6,6 +6,7 @@ target field keeps working while it is visible.
 
 from __future__ import annotations
 
+import math
 from collections import deque
 
 from PySide6.QtCore import QEasingCurve, QRectF, Qt, QTimer, QVariantAnimation
@@ -63,6 +64,12 @@ class Overlay(QWidget):
         self._hide_timer.setSingleShot(True)
         self._hide_timer.timeout.connect(self.dismiss)
 
+        self._demo_timer = QTimer(self)
+        self._demo_timer.setInterval(70)
+        self._demo_timer.timeout.connect(self._demo_step)
+        self._demo_words: list[str] = []
+        self._demo_frame = 0
+
     def _anim(self, ms: int, curve: QEasingCurve.Type) -> QVariantAnimation:
         anim = QVariantAnimation(self)
         anim.setDuration(ms)
@@ -74,6 +81,34 @@ class Overlay(QWidget):
         self.style_ = STYLES.get(key, STYLES[DEFAULT_STYLE])
         if self.isVisible():
             self._place()
+
+    @property
+    def demo_running(self) -> bool:
+        return self._demo_timer.isActive()
+
+    def demo(self, text: str = "Так будет выглядеть диктовка: слова появляются, пока вы говорите") -> None:
+        """Play a short fake dictation so the user can see the chosen style for real."""
+        self._demo_words = text.split()
+        self._demo_frame = 0
+        self.present()
+        self._demo_timer.start()
+
+    def stop_demo(self) -> None:
+        self._demo_timer.stop()
+
+    def _demo_step(self) -> None:
+        self._demo_frame += 1
+        frame = self._demo_frame
+        # speech-like level: bursts with short pauses
+        self.set_level(0.0 if frame % 9 == 0 else 0.35 + 0.55 * abs(math.sin(frame * 0.9)))
+        shown = min(len(self._demo_words), frame // 4)
+        confirmed = " ".join(self._demo_words[:max(0, shown - 2)])
+        tentative = " ".join(self._demo_words[max(0, shown - 2):shown])
+        self.set_text(confirmed, tentative)
+        if shown >= len(self._demo_words) and frame > len(self._demo_words) * 4 + 6:
+            self.set_text(" ".join(self._demo_words), "")
+            self._demo_timer.stop()
+            self.finish(1000)
 
     def present(self) -> None:
         self._hide_timer.stop()

@@ -137,6 +137,7 @@ class TrayApp:
         if self._settings is None:
             self._settings = SettingsWindow(self.config, self.hotkey, self.icons[False], self.controller.last_text)
             self._settings.changed.connect(self._apply)
+            self._settings.style_demo.connect(self.controller.demo_style)
         return self._settings
 
     def open_settings(self, page: str = "") -> None:

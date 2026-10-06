@@ -76,6 +76,13 @@ class Controller(QObject):
         elif hasattr(self.engine, "config"):
             self.engine.config = config  # language / dictionary apply on next pass
 
+    def demo_style(self, key: str) -> None:
+        """Show the chosen overlay style at the bottom of the screen with a fake dictation."""
+        if self.state is not State.IDLE:
+            return
+        self.overlay.set_style(key)
+        self.overlay.demo()
+
     # --- session --------------------------------------------------------------
     @Slot()
     def toggle(self) -> None:
@@ -101,6 +108,7 @@ class Controller(QObject):
         self._missed = ""
         self._send_enter = False
         self._set_state(State.RECORDING)
+        self.overlay.stop_demo()
         if self.config.show_overlay and not self.engine.types_natively:
             self.overlay.present()  # first, so the user sees a reaction immediately
         QTimer.singleShot(0, self._begin)

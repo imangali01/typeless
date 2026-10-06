@@ -42,6 +42,7 @@ PAGES = [("general", "Основное"), ("recognition", "Распознава�
 
 class SettingsWindow(QWidget):
     changed = Signal(object)  # Config
+    style_demo = Signal(str)  # play the overlay style on screen
 
     def __init__(self, config: Config, hotkey: GlobalHotkey, icon: QIcon, last_text: str = "") -> None:
         super().__init__()
@@ -243,6 +244,7 @@ class SettingsWindow(QWidget):
             c.set_selected(k == key)
         if emit:
             self._set(overlay_style=key)
+            self.style_demo.emit(key)
 
     def _page_dictionary(self, last_text: str) -> QWidget:
         page, col = self._page("Словарь", "Термины подсказывают модели написание, исправления заменяют "
