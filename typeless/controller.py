@@ -19,6 +19,7 @@ from .live_text import Edit, LiveText
 from .overlay import Overlay
 from .overlay.textopts import TextOptions
 from .terms import suggest_terms
+from .toast import Toast
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ class Controller(QObject):
         self.state = State.IDLE
         self.overlay = Overlay(config.overlay_style, config.overlay_colors.get(config.overlay_style))
         self.overlay.text = TextOptions.from_dict(config.overlay_text)
+        self.toast = Toast()
         self.engine: Engine | None = None
         self.last_text = ""
         self._live = LiveText()
@@ -198,17 +200,17 @@ class Controller(QObject):
     def _finish_clipboard(self, text: str) -> None:
         if not text:
             return
-        if self._missed:
-            copy, reason = self._missed.strip(), "Окно сменилось во время диктовки — вставьте через Ctrl+V."
-        elif not self._can_type and self.config.clipboard != CLIPBOARD_NEVER:
-            copy, reason = text, "Курсор не стоял в поле ввода — вставьте через Ctrl+V."
-        elif self.config.clipboard == CLIPBOARD_ALWAYS:
-            copy, reason = text, ""
+        if self._missed:  # focus moved away mid-dictation
+            copy, announce = self._missed.strip(), True
+        elif not self._can_type and self.config.clipboard != CLIPBOARD_NEVER:  # no text field
+            copy, announce = text, True
+        elif self.config.clipboard == CLIPBOARD_ALWAYS:  # also typed, so no need to say it
+            copy, announce = text, False
         else:
             return
         QGuiApplication.clipboard().setText(copy)
-        if reason:
-            self.notify.emit("Текст скопирован в буфер", reason)
+        if announce:
+            self.toast.show_message("Скопировано в буфер обмена")
 
     @Slot(str)
     def _on_error(self, message: str) -> None:
