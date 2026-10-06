@@ -6,6 +6,7 @@ and LocalAgreement confirms words that two consecutive passes agree on.
 
 from __future__ import annotations
 
+import gc
 import logging
 import queue
 import threading
@@ -52,6 +53,7 @@ class WhisperEngine(Engine):
         self._stream = None
         self._worker: threading.Thread | None = None
         self._stop = threading.Event()
+        self._released = False  # shut down: don't keep (or finish loading) a model
 
     # --- model -------------------------------------------------------------
     def preload(self) -> None:
@@ -69,9 +71,12 @@ class WhisperEngine(Engine):
                 )
                 # The first pass is ~2x slower (allocations, caches): pay it now, not on the first phrase.
                 warm = np.random.default_rng(0).normal(0, 0.01, SAMPLE_RATE).astype(np.float32)
-                list(self._model.transcribe(warm, language="ru", beam_size=1)[0])
+                list(self._model.transcribe(warm, language="ru", beam_size=1, temperature=0.0,
+                                            max_new_tokens=8)[0])
                 log.info("model %s loaded in %.1fs", self.config.whisper_model, time.monotonic() - t)
                 self.status.emit("")
+            if self._released:  # replaced while loading: don't keep it alive
+                self._model = None
             return self._model
 
     # --- control -----------------------------------------------------------
@@ -116,7 +121,19 @@ class WhisperEngine(Engine):
         self._run()
 
     def shutdown(self) -> None:
+        """Stop and free the model: switching models used to keep the old one in RAM."""
         self.stop()
+        self._released = True
+        worker = self._worker
+        if worker is not None and worker.is_alive() and worker is not threading.current_thread():
+            worker.join(timeout=5)
+        # If a load is in progress, don't block the UI: _ensure_model drops it when done.
+        if self._model_lock.acquire(blocking=False):
+            try:
+                self._model = None
+            finally:
+                self._model_lock.release()
+        gc.collect()
 
     def _on_audio(self, data, frames, time_info, status) -> None:
         mono = data[:, 0].copy()
