@@ -8,7 +8,7 @@ from enum import Enum
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from PySide6.QtGui import QGuiApplication
 
-from . import typer
+from . import app_rules, typer
 from . import winapi as w
 from .cleanup import apply_corrections, clean, is_hallucination
 from .config import CLIPBOARD_ALWAYS, CLIPBOARD_NEVER, Config
@@ -90,6 +90,13 @@ class Controller(QObject):
     def toggle(self) -> None:
         log.info("toggle in state %s", self.state.value)
         if self.state is State.IDLE:
+            process = app_rules.foreground_process()
+            shortcut = app_rules.match(self.config.app_rules, process)
+            if shortcut is not None:
+                # e.g. VS Code: let the app's own dictation handle it
+                log.info("%s: sending %s instead of dictating", process, shortcut)
+                typer.press_combo(app_rules.combo_vks(shortcut))
+                return
             self.start()
         elif self.state is State.RECORDING:
             self.stop()

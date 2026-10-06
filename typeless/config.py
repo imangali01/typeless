@@ -41,6 +41,8 @@ class Config:
     corrections: dict[str, str] = field(default_factory=dict)  # wrong -> right
     suggested_terms: list[str] = field(default_factory=list)
     ignored_terms: list[str] = field(default_factory=list)
+    # process name -> shortcut sent instead of dictating (the app's own dictation)
+    app_rules: dict[str, str] = field(default_factory=lambda: {"Code.exe": "Ctrl+D"})
 
     @classmethod
     def load(cls, path: Path | None = None) -> Config:
