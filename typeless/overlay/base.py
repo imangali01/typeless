@@ -13,6 +13,7 @@ from PySide6.QtCore import QEasingCurve, QRectF, Qt, QTimer, QVariantAnimation
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QWidget
 
+from ..loudness import Envelope
 from . import anchor
 from .palettes import Palette, resolve
 from .textopts import TextOptions
@@ -49,6 +50,7 @@ class Overlay(QWidget):
         self.presence = 0.0  # 0 hidden .. 1 fully shown
 
         self._target_level = 0.0
+        self._envelope = Envelope()
         self._ticks = 0
         self._caret = None
 
@@ -211,10 +213,11 @@ class Overlay(QWidget):
 
     def _on_tick(self) -> None:
         self._ticks += 1
-        self.phase += 0.16
+        self.phase += 0.10 + 0.22 * self.levels[-1]  # louder voice, livelier motion
         if self.active:
-            self.levels.append(max(self._target_level, 0.05))
-            self._target_level *= 0.55
+            # loudest block since the last frame, smoothed: jumps on a syllable, settles in pauses
+            self.levels.append(max(self._envelope.step(self._target_level), 0.03))
+            self._target_level = 0.0
         else:
             self.levels.append(self.levels[-1] * 0.8)
         follows = self.style_.follows

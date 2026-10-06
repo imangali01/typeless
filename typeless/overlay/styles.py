@@ -54,7 +54,7 @@ class LineStyle(Style):
     key = "line"
     title = "Линия голоса"
     description = "Светящаяся линия внизу экрана дрожит от голоса, слова проявляются из размытия"
-    HEIGHT = 250
+    HEIGHT = 290
 
     look = TextLook(font=_font(15, QFont.Weight.Medium), outline=QColor(0, 0, 0, 170),
                     blur_reveal=True, max_lines=2, line_opacity=(1.0, 0.55))
@@ -75,15 +75,28 @@ class LineStyle(Style):
         shade.setColorAt(1.0, QColor(10, 10, 20, int(120 * presence)))
         p.fillRect(rect, shade)
 
+        # Loudness history spread from the centre outwards: the newest sound is in the
+        # middle, earlier syllables travel to the edges, like a live oscilloscope.
+        history = list(o.levels)
+        newest = len(history) - 1
+
+        def envelope(t: float) -> float:
+            pos = abs(t - 0.5) * 2 * newest  # 0 at the centre .. newest at the edges
+            i = int(pos)
+            frac = pos - i
+            a = history[newest - min(i, newest)]
+            b = history[newest - min(i + 1, newest)]
+            return a + (b - a) * frac
+
         # three strands with different phases make a living ribbon
         for strand, (alpha, width, phase_k) in enumerate(((60, 7.0, 1.0), (140, 2.4, 1.6), (255, 1.4, 2.3))):
             path = QPainterPath()
-            steps = 120
+            steps = 140
             for i in range(steps + 1):
                 t = i / steps
                 x = cx - half + 2 * half * t
-                taper = math.sin(math.pi * t) ** 1.5
-                amp = (2 + level * 26) * taper
+                taper = math.sin(math.pi * t) ** 1.2
+                amp = (1.5 + envelope(t) ** 1.1 * 52) * taper
                 dy = amp * math.sin(t * 18 + o.phase * phase_k + strand) * math.sin(t * 5 - o.phase * 0.7)
                 if i == 0:
                     path.moveTo(x, y + dy)
@@ -103,7 +116,7 @@ class LineStyle(Style):
         if tokens:
             m = QFontMetricsF(look.font, p.device())
             lines = layout(tokens, m, min(900, rect.width() - 80), look.max_lines)
-            area = QRectF(rect.left(), rect.top(), rect.width(), y - 22 - rect.top())
+            area = QRectF(rect.left(), rect.top(), rect.width(), y - 62 - rect.top())  # clear of the wave
             draw_block(p, lines, look, area, known_words=o.known_words, reveal=o.reveal)
 
 

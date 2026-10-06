@@ -16,6 +16,7 @@ import numpy as np
 from ..agreement import LocalAgreement, Word, join_words, trim_point
 from ..config import Config
 from ..languages import DEFAULT_LANGUAGE, LANGUAGE_MODES, build_prompt
+from ..loudness import loudness
 from .base import Engine
 
 log = logging.getLogger(__name__)
@@ -29,6 +30,16 @@ FINAL_BEAM = 5  # wider beam for the last pass, only when the tail is short
 FINAL_BEAM_MAX_S = 3.0
 CPU_THREADS = 4  # measured on i5-13420H: ~as fast as 8 threads at half the CPU load
 SPEECH_RMS = 0.006  # below this a chunk is treated as silence
+MAX_NEW_TOKENS = 200  # per pass; a 10 s buffer of fast speech is ~60-80 tokens
+SLOW_PASS_S = 3.0  # log passes slower than this
+
+
+def _looks_hallucinated(seg) -> bool:
+    """A segment that repeats itself ("что я не знаю, что я не знаю, …") or is
+    low-confidence text over what the model itself calls silence."""
+    if seg.compression_ratio > 2.4:
+        return True
+    return seg.no_speech_prob > 0.6 and seg.avg_logprob < -1.0
 
 
 class WhisperEngine(Engine):
@@ -79,7 +90,8 @@ class WhisperEngine(Engine):
 
         try:
             self._stream = sd.InputStream(
-                samplerate=SAMPLE_RATE, channels=1, dtype="float32", blocksize=1600,
+                # 32 ms blocks: the waveform gets ~30 level updates a second
+                samplerate=SAMPLE_RATE, channels=1, dtype="float32", blocksize=512,
                 callback=self._on_audio,
             )
             self._stream.start()
@@ -110,7 +122,7 @@ class WhisperEngine(Engine):
         mono = data[:, 0].copy()
         self._chunks.put(mono)
         rms = float(np.sqrt(np.mean(mono * mono)))
-        self.level.emit(min(1.0, rms * 12))
+        self.level.emit(loudness(rms))
 
     # --- streaming loop ----------------------------------------------------
     def _drain(self, buffer: np.ndarray) -> np.ndarray:
@@ -131,6 +143,7 @@ class WhisperEngine(Engine):
     def _transcribe(self, audio: np.ndarray, offset: float, prompt: str, beam: int = 1) -> list[Word]:
         model = self._ensure_model()
         mode = LANGUAGE_MODES.get(self.config.language_mode, LANGUAGE_MODES[DEFAULT_LANGUAGE])
+        started = time.monotonic()
         segments, _ = model.transcribe(
             audio,
             language=mode.whisper,
@@ -139,12 +152,23 @@ class WhisperEngine(Engine):
             vad_filter=True,
             condition_on_previous_text=False,
             initial_prompt=prompt or None,
+            # No temperature fallback: on noisy audio the default re-decodes the same chunk
+            # up to 6 times, which turned a stop into a 1.5-minute wait.
+            temperature=0.0,
+            # A looping model can't run away: ~3x more tokens than fast speech needs.
+            max_new_tokens=MAX_NEW_TOKENS,
         )
-        return [
+        words = [
             Word(offset + w.start, offset + w.end, w.word)
             for seg in segments
+            if not _looks_hallucinated(seg)
             for w in (seg.words or [])
         ]
+        took = time.monotonic() - started
+        if took > SLOW_PASS_S:
+            log.warning("slow pass: %.1fs for %.1fs of audio (beam %d, prompt %d chars)",
+                        took, len(audio) / SAMPLE_RATE, beam, len(prompt))
+        return words
 
     def _emit(self, words: list[Word]) -> None:
         text = join_words(words)
