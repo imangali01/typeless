@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import os
 import webbrowser
 from dataclasses import replace
@@ -9,7 +10,8 @@ from dataclasses import replace
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
-    QButtonGroup, QColorDialog, QGridLayout, QHBoxLayout, QLineEdit, QScrollArea, QSizePolicy, QStackedWidget,
+    QButtonGroup, QColorDialog, QGridLayout, QHBoxLayout, QLineEdit, QScrollArea, QSizeGrip, QSizePolicy,
+    QStackedWidget,
     QTextEdit, QVBoxLayout, QWidget,
 )
 
@@ -25,7 +27,8 @@ from ..overlay.palettes import PRESETS
 from ..overlay.textopts import FACES, FAMILIES, SIZES, TextOptions
 from . import theme
 from .widgets import (
-    Chip, Combo, KeyButton, KeyCaps, NavKey, Plate, StylePreview, Swatch, Toggle, label, transparent_holder,
+    Chip, Combo, KeyButton, KeyCaps, NavKey, Plate, StylePreview, Swatch, Toggle, TrafficLights, label,
+    transparent_holder,
 )
 
 VK_ESCAPE = 0x1B
@@ -41,14 +44,15 @@ CLIPBOARD_MODES = [
     (CLIPBOARD_NEVER, "Никогда"),
 ]
 LINES = [("0", "Как в стиле"), ("1", "1 строка"), ("2", "2 строки"), ("3", "3 строки"), ("4", "4 строки")]
-PAGES = [
-    ("general", "Диктовка"),
-    ("recognition", "Распознавание"),
-    ("look", "Индикатор"),
-    ("dictionary", "Словарь"),
-    ("apps", "Приложения"),
-    ("about", "О Typeless"),
+PAGES = [  # key, title, sidebar glyph (Segoe Fluent Icons), sidebar icon colour
+    ("general", "Диктовка", "", "blue"),
+    ("recognition", "Распознавание", "", "purple"),
+    ("look", "Индикатор", "", "orange"),
+    ("dictionary", "Словарь", "", "green"),
+    ("apps", "Приложения", "", "indigo"),
+    ("about", "О Typeless", "", "gray"),
 ]
+TITLE_BAR_H = 52  # drag area at the top, like a macOS toolbar
 
 
 class SettingsWindow(QWidget):
@@ -56,12 +60,13 @@ class SettingsWindow(QWidget):
     style_demo = Signal(str)  # play the overlay style on screen
 
     def __init__(self, config: Config, hotkey: GlobalHotkey, icon: QIcon, last_text: str = "") -> None:
-        super().__init__()
+        super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
+        self.t = theme.init()
         self.setWindowTitle("Typeless")
         self.setWindowIcon(icon)
-        self.resize(1040, 720)
-        self.setMinimumSize(900, 600)
-        self.setStyleSheet(theme.STYLESHEET)
+        self.resize(980, 680)
+        self.setMinimumSize(860, 560)
+        self.setStyleSheet(theme.stylesheet(self.t))
         self.config = config
         self._hook = hotkey
         self._hook.captured.connect(self._on_captured, Qt.ConnectionType.QueuedConnection)
@@ -72,8 +77,25 @@ class SettingsWindow(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
         root.addWidget(self._sidebar())
+        content = QVBoxLayout()
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(0)
+        bar = QHBoxLayout()
+        bar.setContentsMargins(24, 0, 0, 0)
+        self._title = label("", "pageTitle")
+        self._title.setFixedHeight(TITLE_BAR_H)
+        bar.addWidget(self._title)
+        bar.addStretch()
+        content.addLayout(bar)
         self.stack = QStackedWidget()
-        root.addWidget(self.stack, 1)
+        content.addWidget(self.stack, 1)
+        grip_row = QHBoxLayout()
+        grip_row.addStretch()
+        grip = QSizeGrip(self)
+        grip.setStyleSheet("background: transparent;")
+        grip_row.addWidget(grip)
+        content.addLayout(grip_row)
+        root.addLayout(content, 1)
 
         builders = {
             "general": self._page_general,
@@ -83,39 +105,67 @@ class SettingsWindow(QWidget):
             "apps": self._page_apps,
             "about": self._page_about,
         }
-        for key, _ in PAGES:
+        for key, *_ in PAGES:
             self.stack.addWidget(self._scroll(builders[key]()))
         self.open_page("general")
 
-    # --- frame -----------------------------------------------------------------
+    # --- frame: frameless window with traffic lights ---------------------------------
     def showEvent(self, event) -> None:
-        theme.dark_title_bar(self.winId())
+        try:  # Windows 11 rounds the corners of a frameless window when asked
+            corner = ctypes.c_int(2)  # DWMWCP_ROUND
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(int(self.winId()), 33, ctypes.byref(corner),
+                                                       ctypes.sizeof(corner))
+        except Exception:
+            pass
         super().showEvent(event)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and event.position().y() < TITLE_BAR_H:
+            self.windowHandle().startSystemMove()
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if event.position().y() < TITLE_BAR_H:
+            self.showNormal() if self.isMaximized() else self.showMaximized()
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if hasattr(self, "_lights"):
+            self._lights.update()  # traffic lights grey out when the window is inactive
 
     def _sidebar(self) -> QWidget:
         side = QWidget()
-        side.setFixedWidth(230)
+        side.setObjectName("sidebar")
+        side.setFixedWidth(220)
         col = QVBoxLayout(side)
-        col.setContentsMargins(18, 22, 14, 18)
-        col.setSpacing(6)
-        head = QHBoxLayout()
-        mark = label("")
-        mark.setPixmap(logo.pixmap(30))
-        head.addWidget(mark)
-        head.addSpacing(8)
-        head.addWidget(label("Typeless", "brand"))
-        head.addStretch()
-        col.addLayout(head)
-        col.addSpacing(22)
+        col.setContentsMargins(10, 0, 10, 14)
+        col.setSpacing(2)
+        lights_row = QHBoxLayout()
+        lights_row.setContentsMargins(8, 0, 0, 0)
+        self._lights = TrafficLights(self)
+        lights_row.addWidget(self._lights)
+        lights_row.addStretch()
+        lights_holder = QWidget()
+        lights_holder.setStyleSheet("background: transparent;")
+        lights_holder.setFixedHeight(TITLE_BAR_H)
+        lights_holder.setLayout(lights_row)
+        col.addWidget(lights_holder)
         self._nav = QButtonGroup(self)
         self._nav_buttons: dict[str, NavKey] = {}
-        for key, title in PAGES:
-            b = NavKey(title)
+        for key, title, glyph, color in PAGES:
+            b = NavKey(title, glyph, theme.ICON_COLORS[color])
             b.clicked.connect(lambda _=False, k=key: self.open_page(k))
             self._nav.addButton(b)
             self._nav_buttons[key] = b
             col.addWidget(b)
         col.addStretch()
+        foot = QHBoxLayout()
+        mark = label("")
+        mark.setPixmap(logo.pixmap(18))
+        foot.addWidget(mark)
+        foot.addWidget(label(f"Typeless {__version__}", "secondary"))
+        foot.addStretch()
+        col.addLayout(foot)
         return side
 
     def _scroll(self, page: QWidget) -> QScrollArea:
@@ -126,26 +176,27 @@ class SettingsWindow(QWidget):
 
     def _page(self, title: str, lead: str = "") -> tuple[QWidget, QVBoxLayout]:
         page = QWidget()
+        page.setProperty("title", title)
         outer = QHBoxLayout(page)
-        outer.setContentsMargins(26, 24, 30, 30)
+        outer.setContentsMargins(24, 4, 24, 24)
         body = QWidget()
-        body.setMaximumWidth(860)
+        body.setMaximumWidth(720)
         body.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         col = QVBoxLayout(body)
         col.setContentsMargins(0, 0, 0, 0)
-        col.setSpacing(14)
-        col.addWidget(label(title, "pageTitle"))
+        col.setSpacing(18)
         if lead:
-            col.addWidget(label(lead, "muted", wrap=True))
-        col.addSpacing(4)
-        outer.addWidget(body, 10)
+            col.addWidget(label(lead, "footnote", wrap=True))
+        outer.addStretch(1)
+        outer.addWidget(body, 12)
         outer.addStretch(1)
         return page, col
 
     def open_page(self, key: str) -> None:
-        index = [k for k, _ in PAGES].index(key)
+        index = [k for k, *_ in PAGES].index(key)
         self.stack.setCurrentIndex(index)
         self._nav_buttons[key].setChecked(True)
+        self._title.setText(next(title for k, title, *_ in PAGES if k == key))
 
     def _set(self, **changes) -> None:
         self.config = replace(self.config, **changes)
@@ -172,11 +223,7 @@ class SettingsWindow(QWidget):
         self.change_btn.clicked.connect(self._start_capture)
         reset = KeyButton("Сбросить")
         reset.clicked.connect(lambda: self._apply_hotkey(DEFAULT_HOTKEY))
-        keys_row = QHBoxLayout()
-        keys_row.addWidget(self.keycaps, 1)
-        keys_row.addWidget(self.change_btn)
-        keys_row.addWidget(reset)
-        plate.add(layout=keys_row)
+        plate.row("Сочетание", "", self.keycaps, self.change_btn, reset)
         plate.row("Enter во время диктовки", "Допечатывает текст и отправляет. Shift+Enter — обычный перенос строки.")
         col.addWidget(plate)
 
@@ -241,7 +288,7 @@ class SettingsWindow(QWidget):
         col.addWidget(plate)
 
         plate = Plate("Цвет")
-        self._color_hint = label("", "muted")
+        self._color_hint = label("", "secondary")
         plate.add(self._color_hint)
         row = QHBoxLayout()
         row.setSpacing(6)
@@ -340,7 +387,7 @@ class SettingsWindow(QWidget):
         self._term_input = QLineEdit()
         self._term_input.setPlaceholderText("Например: Terraform, Jira, ClickHouse")
         self._term_input.returnPressed.connect(self._add_term_from_input)
-        add = KeyButton("Добавить")
+        add = KeyButton("Добавить", default=True)
         add.clicked.connect(self._add_term_from_input)
         row.addWidget(self._term_input, 1)
         row.addWidget(add)
@@ -357,10 +404,10 @@ class SettingsWindow(QWidget):
         self._right = QLineEdit()
         self._right.setPlaceholderText("Как должно быть")
         self._right.returnPressed.connect(self._add_correction)
-        add = KeyButton("Добавить")
+        add = KeyButton("Добавить", default=True)
         add.clicked.connect(self._add_correction)
         row.addWidget(self._wrong, 1)
-        row.addWidget(label("→", "muted"))
+        row.addWidget(label("→", "secondary"))
         row.addWidget(self._right, 1)
         row.addWidget(add)
         plate.add(layout=row)
@@ -443,7 +490,7 @@ class SettingsWindow(QWidget):
             ]))
         if not self.config.suggested_terms:
             self._suggest_flow.addWidget(label("Пока пусто — продиктуйте что-нибудь с английскими терминами.",
-                                               "muted"))
+                                               "secondary"))
         for term in self.config.dictionary:
             self._terms_flow.addWidget(Chip(term, [("×", "Удалить", lambda t=term: self._remove_term(t))]))
         for wrong, right in self.config.corrections.items():
@@ -467,13 +514,13 @@ class SettingsWindow(QWidget):
         self._rule_keys = QLineEdit()
         self._rule_keys.setPlaceholderText("Сочетание, например Ctrl+D")
         self._rule_keys.returnPressed.connect(self._add_rule)
-        add = KeyButton("Добавить")
+        add = KeyButton("Добавить", default=True)
         add.clicked.connect(self._add_rule)
         row.addWidget(self._rule_app, 1)
         row.addWidget(self._rule_keys, 1)
         row.addWidget(add)
         plate.add(layout=row)
-        self._rule_error = label("", "muted")
+        self._rule_error = label("", "secondary")
         plate.add(self._rule_error)
         col.addWidget(plate)
         col.addStretch()
@@ -527,13 +574,13 @@ class SettingsWindow(QWidget):
         head.addSpacing(12)
         names = QVBoxLayout()
         names.setSpacing(2)
-        names.addWidget(label("Typeless", "brand"))
-        names.addWidget(label(f"Версия {__version__}", "muted"))
+        names.addWidget(label("Typeless", "appName"))
+        names.addWidget(label(f"Версия {__version__}", "secondary"))
         head.addLayout(names)
         head.addStretch()
         plate.add(layout=head)
         plate.add(label("Голосовой ввод в любое поле. Распознавание на faster-whisper, локально: аудио не "
-                        "покидает компьютер (кроме движка «Диктовка Windows»).", "muted", wrap=True))
+                        "покидает компьютер (кроме движка «Диктовка Windows»).", "secondary", wrap=True))
         col.addWidget(plate)
 
         plate = Plate()

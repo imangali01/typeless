@@ -1,4 +1,4 @@
-"""Widgets of the keyboard-deck look: keycap buttons, LED toggles, plates."""
+"""macOS-style widgets: grouped lists, switches, pop-up buttons, sidebar items, traffic lights."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import random
 from PySide6.QtCore import (
     Property, QEasingCurve, QPoint, QPointF, QPropertyAnimation, QRect, QRectF, QSize, Qt, QTimer, Signal,
 )
-from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPen, QRadialGradient
+from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractButton, QComboBox, QFrame, QHBoxLayout, QLabel, QLayout, QPushButton, QSizePolicy,
     QVBoxLayout, QWidget,
@@ -26,162 +26,123 @@ def label(text: str, kind: str = "", wrap: bool = False) -> QLabel:
     return lbl
 
 
-# --- keycap drawing ------------------------------------------------------------------
-def draw_keycap(p: QPainter, rect: QRectF, text: str, font: QFont, *, pressed: bool = False,
-                hover: bool = False, led: bool | None = None, align=Qt.AlignmentFlag.AlignCenter,
-                radius: float = 7) -> QRectF:
-    """A light keycap: side wall below, top surface above; pressed caps sink.
-
-    led: None = no indicator, False = dark LED, True = lit LED.
-    Returns the top surface rect.
-    """
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setPen(Qt.PenStyle.NoPen)
-    sink = 2.0 if pressed else 0.0
-    # shadow on the deck
-    p.setBrush(QColor(0, 0, 0, 90 if not pressed else 50))
-    p.drawRoundedRect(rect.adjusted(0, 2 + sink, 0, 1), radius, radius)
-    # wall
-    wall = QLinearGradient(0, rect.top(), 0, rect.bottom())
-    wall.setColorAt(0, QColor("#c4c7cf"))
-    wall.setColorAt(1, QColor(theme.CAP_WALL))
-    p.setBrush(wall)
-    p.drawRoundedRect(rect.adjusted(0, sink, 0, 0), radius, radius)
-    # top
-    top = rect.adjusted(2.5, 1 + sink, -2.5, -(5 - sink * 1.2))
-    cap = QLinearGradient(0, top.top(), 0, top.bottom())
-    base = QColor(theme.CAP_TOP_PRESSED if pressed else theme.CAP_TOP)
-    if hover and not pressed:
-        base = base.lighter(103)
-    cap.setColorAt(0, base.lighter(103))
-    cap.setColorAt(1, base.darker(104))
-    p.setBrush(cap)
-    p.drawRoundedRect(top, radius - 1.5, radius - 1.5)
-    text_rect = top.adjusted(10, 0, -10, 0)
-    if led is not None:
-        center = QPointF(top.left() + 13, top.center().y())
-        if led:
-            glow = QRadialGradient(center, 9)
-            glow.setColorAt(0, QColor(47, 214, 255, 150))
-            glow.setColorAt(1, QColor(47, 214, 255, 0))
-            p.setBrush(glow)
-            p.drawEllipse(center, 9, 9)
-        p.setBrush(QColor(theme.LED if led else "#9a9ea8"))
-        p.drawEllipse(center, 3.2, 3.2)
-        text_rect.setLeft(top.left() + 26)
-    p.setFont(font)
-    p.setPen(QColor(theme.CAP_TEXT))
-    p.drawText(text_rect, align | Qt.AlignmentFlag.AlignVCenter, text)
-    return top
-
-
-class KeyButton(QPushButton):
-    """Push button drawn as a light keycap; sinks while pressed."""
-
-    def __init__(self, text: str, min_width: int = 0) -> None:
-        super().__init__(text)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._hover = False
-        self._font = theme.title_font(9.5, QFont.Weight.Medium)
-        self.setMinimumWidth(max(min_width, self.fontMetrics().horizontalAdvance(text) + 36))
-        self.setFixedHeight(34)
-
-    def enterEvent(self, event) -> None:
-        self._hover = True
-        self.update()
-
-    def leaveEvent(self, event) -> None:
-        self._hover = False
-        self.update()
-
-    def paintEvent(self, event) -> None:
-        p = QPainter(self)
-        r = QRectF(self.rect()).adjusted(1, 1, -1, -3)
-        if not self.isEnabled():
-            p.setOpacity(0.5)
-        draw_keycap(p, r, self.text(), self._font, pressed=self.isDown(), hover=self._hover)
-
-
-class NavKey(QPushButton):
-    """Sidebar key: a wide keycap with an indicator LED; the current page stays pressed."""
-
-    def __init__(self, text: str) -> None:
-        super().__init__(text)
-        self.setCheckable(True)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedHeight(44)
-        self._hover = False
-        self._font = theme.title_font(10.5, QFont.Weight.Medium)
-
-    def enterEvent(self, event) -> None:
-        self._hover = True
-        self.update()
-
-    def leaveEvent(self, event) -> None:
-        self._hover = False
-        self.update()
-
-    def paintEvent(self, event) -> None:
-        p = QPainter(self)
-        r = QRectF(self.rect()).adjusted(2, 2, -2, -4)
-        on = self.isChecked()
-        draw_keycap(p, r, self.text(), self._font, pressed=on or self.isDown(), hover=self._hover,
-                    led=on, align=Qt.AlignmentFlag.AlignLeft)
-
-
-# --- plates --------------------------------------------------------------------------
-class Plate(QFrame):
-    """A section: title on the plate, rows separated by thin dividers."""
+# --- grouped list ----------------------------------------------------------------
+class Plate(QWidget):
+    """macOS grouped list: header above, rounded group of rows, footnote below."""
 
     def __init__(self, title: str = "", note: str = "") -> None:
         super().__init__()
-        self.setObjectName("plate")
+        self.setStyleSheet("background: transparent;")
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
-        self._col = QVBoxLayout(self)
-        self._col.setContentsMargins(20, 16, 20, 8)
-        self._col.setSpacing(0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(6)
         if title:
-            self._col.addWidget(label(title, "plateTitle"))
+            outer.addWidget(label(title, "groupHeader"))
+        self._group = QFrame()
+        self._group.setObjectName("group")
+        self._col = QVBoxLayout(self._group)
+        self._col.setContentsMargins(0, 0, 0, 0)
+        self._col.setSpacing(0)
+        outer.addWidget(self._group)
         if note:
-            self._col.addSpacing(2)
-            self._col.addWidget(label(note, "muted", wrap=True))
-        if title or note:
-            self._col.addSpacing(8)
-        self._rows = 0
+            outer.addWidget(label(note, "footnote", wrap=True))
+        self._items = 0
+
+    def _separator(self) -> None:
+        if self._items:
+            holder = QWidget()
+            holder.setStyleSheet("background: transparent;")
+            h = QHBoxLayout(holder)
+            h.setContentsMargins(14, 0, 0, 0)
+            line = QFrame()
+            line.setFixedHeight(1)
+            # own stylesheet: the holder's "transparent" rule would otherwise hide it
+            line.setStyleSheet(f"background: {theme.T.separator}; border: none;")
+            h.addWidget(line)
+            self._col.addWidget(holder)
+        self._items += 1
 
     def row(self, title: str, description: str = "", *controls: QWidget) -> QHBoxLayout:
-        if self._rows:
-            line = QFrame()
-            line.setObjectName("divider")
-            self._col.addWidget(line)
-        self._rows += 1
+        self._separator()
         holder = QWidget()
         holder.setStyleSheet("background: transparent;")
         row = QHBoxLayout(holder)
-        row.setContentsMargins(0, 12, 0, 12)
-        row.setSpacing(10)
+        row.setContentsMargins(14, 9, 12, 9)
+        row.setSpacing(8)
         text = QVBoxLayout()
-        text.setSpacing(2)
+        text.setSpacing(1)
         text.addWidget(label(title, "rowTitle"))
         if description:
-            text.addWidget(label(description, "muted", wrap=True))
+            text.addWidget(label(description, "secondary", wrap=True))
         row.addLayout(text, 1)
         for c in controls:
             row.addWidget(c, 0, Qt.AlignmentFlag.AlignVCenter)
+        holder.setMinimumHeight(44)
         self._col.addWidget(holder)
         return row
 
     def add(self, widget: QWidget | None = None, layout=None) -> None:
-        """Free-form content (galleries, chip lists)."""
+        """Free-form content inside the group (galleries, chip lists)."""
+        self._separator()
+        holder = QWidget()
+        holder.setStyleSheet("background: transparent;")
+        box = QVBoxLayout(holder)
+        box.setContentsMargins(14, 10, 12, 10)
         if widget is not None:
-            self._col.addWidget(widget)
+            box.addWidget(widget)
         if layout is not None:
-            self._col.addLayout(layout)
-        self._col.addSpacing(8)
+            box.addLayout(layout)
+        self._col.addWidget(holder)
+
+
+# --- controls --------------------------------------------------------------------
+class KeyButton(QPushButton):
+    """macOS push button; `default=True` gives the blue default button."""
+
+    def __init__(self, text: str, min_width: int = 0, default: bool = False) -> None:
+        super().__init__(text)
+        self._default = default
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(26)
+        self.setMinimumWidth(max(min_width, self.fontMetrics().horizontalAdvance(text) + 28))
+
+    def paintEvent(self, event) -> None:
+        t = theme.T
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -1.5)
+        if not self.isEnabled():
+            p.setOpacity(0.45)
+        # soft drop shadow
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(0, 0, 0, 60 if t.dark else 25))
+        p.drawRoundedRect(r.translated(0, 1), 6, 6)
+        if self._default:
+            top, bottom, text = QColor(t.accent).lighter(112), QColor(t.accent), QColor("#ffffff")
+        else:
+            base = QColor(t.control if not t.dark else "#5a5a5e")
+            top, bottom, text = base.lighter(104), base, QColor(t.text)
+            if t.dark:
+                top, bottom = QColor("#636366"), QColor("#58585c")
+        if self.isDown():
+            top, bottom = top.darker(112), bottom.darker(112)
+        grad = QLinearGradient(0, r.top(), 0, r.bottom())
+        grad.setColorAt(0, top)
+        grad.setColorAt(1, bottom)
+        p.setBrush(grad)
+        if t.dark:
+            p.setPen(Qt.PenStyle.NoPen)
+        else:
+            p.setPen(QPen(QColor(0, 0, 0, 30), 0.8))
+        p.drawRoundedRect(r, 6, 6)
+        p.setPen(text)
+        p.setFont(theme.font(9.5, QFont.Weight.Medium))
+        p.drawText(r, Qt.AlignmentFlag.AlignCenter, self.text())
 
 
 class Combo(QComboBox):
-    """Recessed combo box with a drawn chevron."""
+    """macOS pop-up button: value on the left, blue square with up/down chevrons on the right."""
 
     def __init__(self, items: list[tuple[str, str]], value: str) -> None:
         super().__init__()
@@ -192,26 +153,32 @@ class Combo(QComboBox):
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
+        t = theme.T
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(QPen(QColor(theme.MUTED), 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        cx, cy = self.width() - 18, self.height() / 2
-        p.drawLine(QPointF(cx - 4, cy - 2), QPointF(cx, cy + 2))
-        p.drawLine(QPointF(cx, cy + 2), QPointF(cx + 4, cy - 2))
+        box = QRectF(self.width() - 22, (self.height() - 16) / 2, 16, 16)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(t.accent))
+        p.drawRoundedRect(box, 4, 4)
+        p.setPen(QPen(QColor("#ffffff"), 1.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
+                      Qt.PenJoinStyle.RoundJoin))
+        cx, cy = box.center().x(), box.center().y()
+        p.drawPolyline([QPointF(cx - 3, cy - 1.5), QPointF(cx, cy - 4.5), QPointF(cx + 3, cy - 1.5)])
+        p.drawPolyline([QPointF(cx - 3, cy + 1.5), QPointF(cx, cy + 4.5), QPointF(cx + 3, cy + 1.5)])
 
 
 class Toggle(QAbstractButton):
-    """Switch with an indicator LED on the knob: lit when on."""
+    """macOS switch: accent track when on, white knob with a soft shadow."""
 
     def __init__(self, checked: bool = False) -> None:
         super().__init__()
         self.setCheckable(True)
         self.setChecked(checked)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedSize(52, 28)
+        self.setFixedSize(40, 24)
         self._pos = 1.0 if checked else 0.0
         self._anim = QPropertyAnimation(self, b"knob", self)
-        self._anim.setDuration(130)
+        self._anim.setDuration(160)
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.toggled.connect(self._animate)
 
@@ -230,41 +197,112 @@ class Toggle(QAbstractButton):
     knob = Property(float, _get_knob, _set_knob)
 
     def paintEvent(self, event) -> None:
+        t = theme.T
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(QPen(QColor("#0e0f11"), 1))
-        p.setBrush(QColor(theme.WELL))
-        p.drawRoundedRect(QRectF(0.5, 0.5, 51, 27), 13.5, 13.5)
-        knob = QRectF(3 + self._pos * 24, 3, 22, 22)
+        off, on = QColor(t.switch_off), QColor(t.accent)
+        k = self._pos
+        track = QColor(int(off.red() + (on.red() - off.red()) * k), int(off.green() + (on.green() - off.green()) * k),
+                       int(off.blue() + (on.blue() - off.blue()) * k))
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(0, 0, 0, 80))
-        p.drawEllipse(knob.translated(0, 1.5))
-        cap = QLinearGradient(0, knob.top(), 0, knob.bottom())
-        cap.setColorAt(0, QColor(theme.CAP_TOP))
-        cap.setColorAt(1, QColor(theme.CAP_WALL))
-        p.setBrush(cap)
+        p.setBrush(track)
+        p.drawRoundedRect(QRectF(0, 1, 40, 22), 11, 11)
+        knob = QRectF(2 + k * 16, 3, 18, 18)
+        p.setBrush(QColor(0, 0, 0, 60))
+        p.drawEllipse(knob.translated(0, 0.8))
+        p.setBrush(QColor("#ffffff"))
         p.drawEllipse(knob)
-        center = knob.center()
-        lit = self._pos > 0.5
-        if lit:
-            glow = QRadialGradient(center, 9)
-            glow.setColorAt(0, QColor(47, 214, 255, 170))
-            glow.setColorAt(1, QColor(47, 214, 255, 0))
-            p.setBrush(glow)
-            p.drawEllipse(center, 9, 9)
-        p.setBrush(QColor(theme.LED if lit else "#8a8e98"))
-        p.drawEllipse(center, 3.2, 3.2)
+
+
+class NavKey(QPushButton):
+    """Sidebar item: coloured rounded-square icon + title; selection fills with the accent."""
+
+    def __init__(self, text: str, glyph: str = "", color: str = "#8e8e93") -> None:
+        super().__init__(text)
+        self.setCheckable(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(32)
+        self._glyph, self._color = glyph, color
+
+    def paintEvent(self, event) -> None:
+        t = theme.T
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect()).adjusted(0, 1, 0, -1)
+        selected = self.isChecked()
+        if selected:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(t.accent))
+            p.drawRoundedRect(r, 6, 6)
+        icon = QRectF(r.left() + 8, r.center().y() - 10, 20, 20)
+        grad = QLinearGradient(icon.topLeft(), icon.bottomLeft())
+        grad.setColorAt(0, QColor(self._color).lighter(118))
+        grad.setColorAt(1, QColor(self._color))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(grad)
+        p.drawRoundedRect(icon, 5, 5)
+        p.setFont(theme.icon_font(9))
+        p.setPen(QColor("#ffffff"))
+        p.drawText(icon, Qt.AlignmentFlag.AlignCenter, self._glyph)
+        p.setFont(theme.font(10))
+        p.setPen(QColor(t.selection_text if selected else t.text))
+        p.drawText(r.adjusted(38, 0, -6, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self.text())
+
+
+class TrafficLights(QWidget):
+    """Close / minimise / zoom buttons; glyphs appear on hover, as on macOS."""
+
+    def __init__(self, window: QWidget) -> None:
+        super().__init__()
+        self._window = window
+        self.setFixedSize(68, 20)
+        self.setMouseTracking(True)
+        self._hover = False
+
+    def enterEvent(self, event) -> None:
+        self._hover = True
+        self.update()
+
+    def leaveEvent(self, event) -> None:
+        self._hover = False
+        self.update()
+
+    def _circles(self) -> list[tuple[QRectF, str, str]]:
+        return [(QRectF(2 + i * 22, 2, 13, 13), color, sym) for i, (color, sym) in
+                enumerate((("#ff5f57", "×"), ("#febc2e", "–"), ("#28c840", "+")))]
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        active = self._window.isActiveWindow() or self._hover
+        for rect, color, sym in self._circles():
+            p.setPen(QPen(QColor(0, 0, 0, 40), 0.6))
+            p.setBrush(QColor(color if active else ("#4d4d50" if theme.T.dark else "#d0d0d4")))
+            p.drawEllipse(rect)
+            if self._hover:
+                p.setPen(QColor(0, 0, 0, 150))
+                p.setFont(theme.font(8, QFont.Weight.Bold))
+                p.drawText(rect.adjusted(0, -1, 0, 0), Qt.AlignmentFlag.AlignCenter, sym)
+
+    def mousePressEvent(self, event) -> None:
+        pos = event.position()
+        actions = (self._window.close, self._window.showMinimized,
+                   lambda: self._window.showNormal() if self._window.isMaximized() else self._window.showMaximized())
+        for (rect, _, _), action in zip(self._circles(), actions):
+            if rect.adjusted(-3, -3, 3, 3).contains(pos):
+                action()
+                return
 
 
 class KeyCaps(QWidget):
-    """The hotkey drawn as real keycaps: [Win] + [C]. The one loud element of the window."""
+    """The hotkey shown as macOS-style key symbols: [Win] [C]."""
 
     def __init__(self, text: str = "") -> None:
         super().__init__()
         self._text = text
         self._waiting = False
-        self.setFixedHeight(64)
-        self.setMinimumWidth(260)
+        self.setFixedHeight(28)
+        self.setMinimumWidth(110)
         self._blink_on = True
         self._blink = QTimer(self)
         self._blink.setInterval(450)
@@ -284,32 +322,37 @@ class KeyCaps(QWidget):
         self._blink.start()
         self.update()
 
+    def sizeHint(self) -> QSize:
+        return QSize(160, 28)
+
     def paintEvent(self, event) -> None:
+        t = theme.T
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        font = theme.title_font(14, QFont.Weight.DemiBold)
+        p.setFont(theme.font(9.5, QFont.Weight.Medium))
         if self._waiting:
-            p.setFont(theme.title_font(12, QFont.Weight.Medium))
-            p.setPen(QColor(theme.LED if self._blink_on else theme.MUTED))
-            p.drawText(self.rect(), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                       "Нажмите новое сочетание…   Esc — отмена")
+            p.setPen(QColor(t.accent if self._blink_on else t.secondary))
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                       "Нажмите сочетание…")
             return
-        p.setFont(font)
         fm = p.fontMetrics()
-        x = 0.0
-        for i, key in enumerate(self._text.split("+")):
-            if i:
-                p.setPen(QColor(theme.MUTED))
-                p.setFont(theme.title_font(14))
-                p.drawText(QRectF(x, 0, 26, self.height() - 6), Qt.AlignmentFlag.AlignCenter, "+")
-                x += 26
-            w = max(58.0, fm.horizontalAdvance(key) + 34)
-            draw_keycap(p, QRectF(x, 2, w, self.height() - 6), key, font, radius=9)
-            x += w
+        keys = self._text.split("+")
+        widths = [max(26, fm.horizontalAdvance(k) + 14) for k in keys]
+        x = self.width() - (sum(widths) + 4 * (len(keys) - 1))
+        for key, w in zip(keys, widths):
+            box = QRectF(x, 2, w, self.height() - 5)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(0, 0, 0, 70 if t.dark else 30))
+            p.drawRoundedRect(box.translated(0, 1.2), 5, 5)
+            p.setBrush(QColor("#4a4a4d" if t.dark else "#ffffff"))
+            p.drawRoundedRect(box, 5, 5)
+            p.setPen(QColor(t.text))
+            p.drawText(box, Qt.AlignmentFlag.AlignCenter, key)
+            x += w + 4
 
 
 class StylePreview(QFrame):
-    """A live, animated miniature of an overlay style."""
+    """Picker tile with a live, animated miniature of an overlay style (like the wallpaper picker)."""
 
     clicked = Signal()
     AREA = QRect(0, 0, 1280, 400)
@@ -319,7 +362,7 @@ class StylePreview(QFrame):
         super().__init__()
         self.style_obj = style
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setMinimumSize(220, 150)
+        self.setMinimumSize(200, 140)
         self.setStyleSheet("background: transparent;")
         self._state = Overlay(style.key)  # never shown: only its state is used for painting
         s = self._state
@@ -328,7 +371,6 @@ class StylePreview(QFrame):
         s.tentative = "проверю pull request"
         s.known_words = 10**6
         self._selected = False
-        self._hover = False
         self._timer = QTimer(self)
         self._timer.setInterval(40)
         self._timer.timeout.connect(self._tick)
@@ -338,14 +380,6 @@ class StylePreview(QFrame):
 
     def hideEvent(self, event) -> None:
         self._timer.stop()
-
-    def enterEvent(self, event) -> None:
-        self._hover = True
-        self.update()
-
-    def leaveEvent(self, event) -> None:
-        self._hover = False
-        self.update()
 
     def set_selected(self, on: bool) -> None:
         self._selected = on
@@ -369,20 +403,23 @@ class StylePreview(QFrame):
         self.update()
 
     def paintEvent(self, event) -> None:
+        t = theme.T
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        outer = QRectF(self.rect()).adjusted(1, 1, -1, -1)
-        screen = outer.adjusted(0, 0, 0, -30)
+        outer = QRectF(self.rect()).adjusted(3, 3, -3, -3)
+        screen = outer.adjusted(0, 0, 0, -24)
+        if self._selected:
+            p.setPen(QPen(QColor(t.accent), 3))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(screen.adjusted(-2, -2, 2, 2), 10, 10)
         bg = QLinearGradient(screen.topLeft(), screen.bottomRight())
-        bg.setColorAt(0, QColor("#3a4256"))
-        bg.setColorAt(1, QColor("#1c1f29"))
-        p.setPen(QPen(QColor(theme.LED), 2) if self._selected else
-                 QPen(QColor(theme.MUTED if self._hover else theme.PLATE_EDGE), 1))
+        bg.setColorAt(0, QColor("#3e5a8a"))
+        bg.setColorAt(1, QColor("#2a2440"))
+        p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(bg)
-        p.drawRoundedRect(screen, 9, 9)
-
+        p.drawRoundedRect(screen, 8, 8)
         p.save()
-        p.setClipRect(screen.adjusted(2, 2, -2, -2))
+        p.setClipRect(screen.adjusted(1, 1, -1, -1))
         scale = screen.width() / self.AREA.width()
         p.translate(screen.left(), screen.bottom() - self.AREA.height() * scale)
         p.scale(scale, scale)
@@ -391,25 +428,14 @@ class StylePreview(QFrame):
         p.translate(geo.topLeft())
         self.style_obj.paint(p, self._state, QRectF(0, 0, geo.width(), geo.height()))
         p.restore()
-
-        text_rect = QRectF(outer.left() + 2, outer.bottom() - 26, outer.width(), 24)
-        if self._selected:
-            p.setPen(Qt.PenStyle.NoPen)
-            glow = QRadialGradient(QPointF(text_rect.left() + 5, text_rect.center().y()), 8)
-            glow.setColorAt(0, QColor(47, 214, 255, 150))
-            glow.setColorAt(1, QColor(47, 214, 255, 0))
-            p.setBrush(glow)
-            p.drawEllipse(QPointF(text_rect.left() + 5, text_rect.center().y()), 8, 8)
-            p.setBrush(QColor(theme.LED))
-            p.drawEllipse(QPointF(text_rect.left() + 5, text_rect.center().y()), 3, 3)
-            text_rect.setLeft(text_rect.left() + 16)
-        p.setPen(QColor(theme.TEXT if self._selected else theme.MUTED))
-        p.setFont(theme.title_font(10, QFont.Weight.Medium))
-        p.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.style_obj.title)
+        p.setFont(theme.font(9, QFont.Weight.DemiBold if self._selected else QFont.Weight.Normal))
+        p.setPen(QColor(t.text if self._selected else t.secondary))
+        p.drawText(QRectF(outer.left(), outer.bottom() - 20, outer.width(), 20),
+                   Qt.AlignmentFlag.AlignCenter, self.style_obj.title)
 
 
 class Swatch(QAbstractButton):
-    """Round colour sample showing a palette's gradient; LED-coloured ring when selected."""
+    """Colour well: gradient dot with an accent ring when selected."""
 
     def __init__(self, light: str, main: str, deep: str, tip: str) -> None:
         super().__init__()
@@ -417,54 +443,62 @@ class Swatch(QAbstractButton):
         self.setToolTip(tip)
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedSize(34, 34)
+        self.setFixedSize(28, 28)
 
     def paintEvent(self, event) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        if self.isChecked():
-            p.setPen(QPen(QColor(theme.LED), 2))
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawEllipse(QRectF(1.5, 1.5, 31, 31))
-        grad = QLinearGradient(6, 6, 28, 28)
+        grad = QLinearGradient(5, 5, 23, 23)
         for stop, c in zip((0.0, 0.5, 1.0), self.colors):
             grad.setColorAt(stop, QColor(c))
-        p.setPen(Qt.PenStyle.NoPen)
+        p.setPen(QPen(QColor(0, 0, 0, 40), 0.8))
         p.setBrush(grad)
-        p.drawEllipse(QRectF(6, 6, 22, 22))
+        p.drawEllipse(QRectF(5, 5, 18, 18))
+        if self.isChecked():
+            p.setPen(QPen(QColor(theme.T.text), 2))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QRectF(1.5, 1.5, 25, 25))
 
 
 class Chip(QWidget):
-    """A small keycap-shaped tag with + / × actions."""
+    """Token like in macOS mail fields: rounded capsule with + / × actions."""
 
     def __init__(self, text: str, actions: list[tuple[str, str, object]]) -> None:
         super().__init__()
         self._text = text
         self._actions = actions
-        self._font = theme.title_font(9.5, QFont.Weight.Medium)
+        self._font = theme.font(9.5)
         self._hits: list[tuple[QRectF, object]] = []
-        fm = self.fontMetrics()
-        self.setFixedSize(int(fm.horizontalAdvance(text) * 1.05) + 26 + 22 * len(actions), 32)
+        from PySide6.QtGui import QFontMetricsF
+
+        w = QFontMetricsF(self._font).horizontalAdvance(text)
+        self.setFixedSize(int(w) + 22 + 20 * len(actions), 26)
         self.setToolTip("  ".join(tip for _, tip, _ in actions))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def paintEvent(self, event) -> None:
+        t = theme.T
         p = QPainter(self)
-        r = QRectF(self.rect()).adjusted(1, 1, -1, -3)
-        top = draw_keycap(p, r, "", self._font, radius=6)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        tint = QColor(t.accent)
+        tint.setAlpha(55 if t.dark else 35)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(tint)
+        p.drawRoundedRect(r, r.height() / 2, r.height() / 2)
         p.setFont(self._font)
-        p.setPen(QColor(theme.CAP_TEXT))
-        text_w = top.width() - 22 * len(self._actions)
-        p.drawText(QRectF(top.left() + 10, top.top(), text_w - 10, top.height()),
+        p.setPen(QColor(t.text))
+        text_w = r.width() - 20 * len(self._actions)
+        p.drawText(QRectF(r.left() + 11, r.top(), text_w - 11, r.height()),
                    Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self._text)
         self._hits = []
-        x = top.left() + text_w
+        x = r.left() + text_w
         for symbol, _, callback in self._actions:
-            box = QRectF(x, top.top(), 22, top.height())
-            p.setPen(QColor("#5b5f69"))
+            box = QRectF(x, r.top(), 20, r.height())
+            p.setPen(QColor(t.secondary))
             p.drawText(box, Qt.AlignmentFlag.AlignCenter, symbol)
             self._hits.append((box, callback))
-            x += 22
+            x += 20
 
     def mousePressEvent(self, event) -> None:
         for box, callback in self._hits:
@@ -476,7 +510,7 @@ class Chip(QWidget):
 class FlowLayout(QLayout):
     """Wraps child widgets onto new lines (for chips)."""
 
-    def __init__(self, parent: QWidget | None = None, spacing: int = 8) -> None:
+    def __init__(self, parent: QWidget | None = None, spacing: int = 6) -> None:
         super().__init__(parent)
         self._items = []
         self._spacing = spacing
