@@ -10,12 +10,12 @@ import logging
 import os
 import sys
 
-from PySide6.QtCore import QPointF, Qt
-from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from . import autostart
+from . import autostart, logo
 from . import winapi as w
 from .config import Config, app_dir
 from .controller import Controller, State
@@ -29,29 +29,7 @@ IPC_NAME = f"typeless-{os.environ.get('USERNAME', 'user')}"
 
 
 def make_icon(recording: bool, size: int = 64) -> QIcon:
-    return QIcon(make_pixmap(recording, size))
-
-
-def make_pixmap(recording: bool, size: int = 256) -> QPixmap:
-    pix = QPixmap(size, size)
-    pix.fill(Qt.GlobalColor.transparent)
-    s = size / 64
-    p = QPainter(pix)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.scale(s, s)
-    p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QColor("#ff4d5e" if recording else "#7c5cff"))
-    p.drawRoundedRect(2, 2, 60, 60, 18, 18)
-    p.setBrush(QColor("white"))
-    p.drawRoundedRect(24, 11, 16, 27, 8, 8)  # microphone capsule
-    pen = QPen(QColor("white"), 4)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    p.setPen(pen)
-    p.setBrush(Qt.BrushStyle.NoBrush)
-    p.drawArc(16, 17, 32, 30, 200 * 16, 140 * 16)
-    p.drawLine(QPointF(32, 47), QPointF(32, 53))
-    p.end()
-    return pix
+    return logo.icon(recording)
 
 
 class TrayApp:

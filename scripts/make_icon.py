@@ -1,4 +1,4 @@
-"""Write packaging/typeless.ico from the same drawing as the tray icon."""
+"""Write packaging/typeless.ico (multi-size) and docs/screenshots/logo.png from typeless/logo.py."""
 
 import sys
 from pathlib import Path
@@ -6,10 +6,14 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication
 
 sys.path.insert(0, ".")
-from typeless.app import make_pixmap  # noqa: E402
+from typeless import logo  # noqa: E402
 
 app = QApplication([])
-out = Path("packaging/typeless.ico")
-out.parent.mkdir(exist_ok=True)
-ok = make_pixmap(False, 256).save(str(out), "ICO")
-print("saved" if ok else "FAILED", out)
+ico = Path("packaging/typeless.ico")
+ico.parent.mkdir(exist_ok=True)
+logo.write_ico(str(ico))
+print("saved", ico)
+png = Path("docs/screenshots/logo.png")
+png.parent.mkdir(parents=True, exist_ok=True)
+logo.pixmap(256).save(str(png))
+print("saved", png)
